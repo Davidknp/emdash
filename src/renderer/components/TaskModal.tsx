@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm, useStore } from '@tanstack/react-form';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ExternalLink, Settings } from 'lucide-react';
 import { Button } from './ui/button';
 import {
@@ -15,20 +14,12 @@ import { SlugInput } from './ui/slug-input';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
 import { Checkbox } from './ui/checkbox';
-import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { MultiAgentDropdown } from './MultiAgentDropdown';
-import { LinearIssueSelector } from './LinearIssueSelector';
-import { GitHubIssueSelector } from './GitHubIssueSelector';
-import JiraIssueSelector from './JiraIssueSelector';
-import LinearSetupForm from './integrations/LinearSetupForm';
-import JiraSetupForm from './integrations/JiraSetupForm';
-import { useIntegrationStatus } from './hooks/useIntegrationStatus';
 import { type Agent } from '../types';
 import { type AgentRun } from '../types/chat';
 import { agentMeta } from '../providers/meta';
-import { isValidProviderId } from '@shared/providers/registry';
 import { type LinearIssueSummary } from '../types/linear';
 import { type GitHubIssueSummary } from '../types/github';
 import { type JiraIssueSummary } from '../types/jira';
@@ -40,8 +31,6 @@ import {
 import BranchSelect from './BranchSelect';
 import { generateTaskNameFromContext } from '../lib/branchNameGenerator';
 import { useProjectManagementContext } from '../contexts/ProjectManagementContext';
-import { useTaskManagementContext } from '../contexts/TaskManagementContext';
-import { rpc } from '@/lib/rpc';
 
 const DEFAULT_AGENT: Agent = 'claude';
 
@@ -58,65 +47,13 @@ export interface CreateTaskResult {
   nameGenerated?: boolean;
 }
 
-interface TaskModalProps {
-  onClose: () => void;
-  onCreateTask: (
-    name: string,
-    initialPrompt?: string,
-    agentRuns?: AgentRun[],
-    linkedLinearIssue?: LinearIssueSummary | null,
-    linkedGithubIssue?: GitHubIssueSummary | null,
-    linkedJiraIssue?: JiraIssueSummary | null,
-    autoApprove?: boolean,
-    useWorktree?: boolean,
-    baseRef?: string,
-    nameGenerated?: boolean
-  ) => void;
-}
-
-export type TaskModalOverlayProps = BaseModalProps<CreateTaskResult>;
-
-export function TaskModalOverlay({ onSuccess, onClose }: TaskModalOverlayProps) {
-  return (
-    <TaskModal
-      onClose={onClose}
-      onCreateTask={(
-        name,
-        initialPrompt,
-        agentRuns,
-        linkedLinearIssue,
-        linkedGithubIssue,
-        linkedJiraIssue,
-        autoApprove,
-        useWorktree,
-        baseRef,
-        nameGenerated
-      ) =>
-        onSuccess({
-          name,
-          initialPrompt,
-          agentRuns,
-          linkedLinearIssue,
-          linkedGithubIssue,
-          linkedJiraIssue,
-          autoApprove,
-          useWorktree,
-          baseRef,
-          nameGenerated,
-        })
-      }
-    />
-  );
-}
-
-const TaskModal: React.FC<TaskModalProps> = ({ onClose, onCreateTask }) => {
+export function CreateTaskModal({ onClose, onSuccess }: BaseModalProps<CreateTaskResult>) {
   const {
     selectedProject,
     projectDefaultBranch: defaultBranch,
     projectBranchOptions: branchOptions,
     isLoadingBranches,
   } = useProjectManagementContext();
-  const { linkedGithubIssueMap } = useTaskManagementContext();
 
   const existingNames = (selectedProject?.tasks || []).map((w) => w.name);
   const projectPath = selectedProject?.path;
@@ -126,21 +63,8 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, onCreateTask }) => {
     [existingNames]
   );
 
-  // Refs tracking auto-naming behaviour — not form values
-  const userChangedBranchRef = useRef(false);
-  const userHasTypedRef = useRef(false);
-  const nameFromContextRef = useRef(false);
-
-  // Non-form state
-  const [autoGenerateName, setAutoGenerateName] = useState(true);
-
-  // Integration connections — always active since component only mounts when open
-  const integrations = useIntegrationStatus(true);
-
   // Advanced settings UI state
   const [showAdvanced, setShowAdvanced] = useState(false);
-
-  const shouldReduceMotion = useReducedMotion();
 
   // ---------------------------------------------------------------------------
   // TanStack Form
@@ -164,8 +88,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, onCreateTask }) => {
       if (!finalName) {
         finalName = generateFriendlyTaskName(normalizedExisting);
         isNameGenerated = true;
-      } else if (!userHasTypedRef.current && !nameFromContextRef.current) {
-        isNameGenerated = true;
       }
 
       const activeAgentIds = value.agentRuns.map((ar) => ar.agent as Agent);
@@ -178,20 +100,21 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, onCreateTask }) => {
       onClose();
 
       try {
-        onCreateTask(
-          finalName,
-          hasInitialPromptSupport && value.initialPrompt.trim()
-            ? value.initialPrompt.trim()
-            : undefined,
-          value.agentRuns as AgentRun[],
-          value.linkedLinearIssue as LinearIssueSummary | null,
-          value.linkedGithubIssue as GitHubIssueSummary | null,
-          value.linkedJiraIssue as JiraIssueSummary | null,
-          hasAutoApproveSupport ? value.autoApprove : false,
-          value.useWorktree,
-          value.baseRef,
-          isNameGenerated
-        );
+        onSuccess({
+          name: finalName,
+          initialPrompt:
+            hasInitialPromptSupport && value.initialPrompt.trim()
+              ? value.initialPrompt.trim()
+              : undefined,
+          agentRuns: value.agentRuns as AgentRun[],
+          linkedLinearIssue: value.linkedLinearIssue as LinearIssueSummary | null,
+          linkedGithubIssue: value.linkedGithubIssue as GitHubIssueSummary | null,
+          linkedJiraIssue: value.linkedJiraIssue as JiraIssueSummary | null,
+          autoApprove: hasAutoApproveSupport ? value.autoApprove : false,
+          useWorktree: value.useWorktree,
+          baseRef: value.baseRef,
+          nameGenerated: isNameGenerated,
+        });
       } catch (err) {
         console.error('Failed to create task:', err);
       }
@@ -222,79 +145,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, onCreateTask }) => {
     }
   }, [defaultBranch, form]);
 
-  const handleBranchChange = (value: string) => {
-    form.setFieldValue('baseRef', value);
-    userChangedBranchRef.current = true;
-  };
-
-  // ---------------------------------------------------------------------------
-  // Integration connect handlers
-  // ---------------------------------------------------------------------------
-  const handleLinearConnect = useCallback(async () => {
-    const trimmedKey = linearApiKey.trim();
-    if (!trimmedKey) return;
-    setLinearConnectionError(null);
-    try {
-      await integrations.handleLinearConnect(trimmedKey);
-      setLinearSetupOpen(false);
-      setLinearApiKey('');
-      setAutoOpenLinearSelector(true);
-    } catch (error: unknown) {
-      setLinearConnectionError((error as Error)?.message || 'Could not connect Linear. Try again.');
-    }
-  }, [linearApiKey, integrations]);
-
-  const handleJiraConnect = useCallback(async () => {
-    setJiraConnectionError(null);
-    try {
-      await integrations.handleJiraConnect({
-        siteUrl: jiraSite.trim(),
-        email: jiraEmail.trim(),
-        token: jiraToken.trim(),
-      });
-      setJiraSetupOpen(false);
-      setJiraSite('');
-      setJiraEmail('');
-      setJiraToken('');
-    } catch (error: unknown) {
-      setJiraConnectionError((error as Error)?.message || 'Failed to connect.');
-    }
-  }, [jiraSite, jiraEmail, jiraToken, integrations]);
-
-  // Issue selectors — selecting one clears the others
-  const handleLinearIssueChange = useCallback(
-    (issue: LinearIssueSummary | null) => {
-      form.setFieldValue('linkedLinearIssue', issue);
-      if (issue) {
-        form.setFieldValue('linkedGithubIssue', null);
-        form.setFieldValue('linkedJiraIssue', null);
-      }
-    },
-    [form]
-  );
-
-  const handleGithubIssueChange = useCallback(
-    (issue: GitHubIssueSummary | null) => {
-      form.setFieldValue('linkedGithubIssue', issue);
-      if (issue) {
-        form.setFieldValue('linkedLinearIssue', null);
-        form.setFieldValue('linkedJiraIssue', null);
-      }
-    },
-    [form]
-  );
-
-  const handleJiraIssueChange = useCallback(
-    (issue: JiraIssueSummary | null) => {
-      form.setFieldValue('linkedJiraIssue', issue);
-      if (issue) {
-        form.setFieldValue('linkedLinearIssue', null);
-        form.setFieldValue('linkedGithubIssue', null);
-      }
-    },
-    [form]
-  );
-
   const getInitialPromptPlaceholder = () => {
     if (!hasInitialPromptSupport) return 'Selected provider does not support initial prompts';
     if (linkedLinearIssue)
@@ -324,57 +174,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, onCreateTask }) => {
       form.setFieldValue('autoApprove', false);
     }
   }, [hasAutoApproveSupport, form]);
-
-  // ---------------------------------------------------------------------------
-  // Reset form on mount + load app settings
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    const suggested = generateFriendlyTaskName(normalizedExisting);
-    userHasTypedRef.current = false;
-    nameFromContextRef.current = false;
-    userChangedBranchRef.current = false;
-
-    form.reset({
-      name: suggested,
-      agentRuns: [{ agent: DEFAULT_AGENT, runs: 1 }] as Array<{ agent: string; runs: number }>,
-      initialPrompt: '',
-      linkedLinearIssue: null as LinearIssueSummary | null,
-      linkedGithubIssue: null as GitHubIssueSummary | null,
-      linkedJiraIssue: null as JiraIssueSummary | null,
-      autoApprove: false,
-      useWorktree: true,
-      baseRef: defaultBranch,
-    });
-
-    let cancel = false;
-    rpc.appSettings.get().then((settings) => {
-      if (cancel) return;
-
-      const settingsAgent = settings?.defaultProvider;
-      const agent: Agent = isValidProviderId(settingsAgent)
-        ? (settingsAgent as Agent)
-        : DEFAULT_AGENT;
-      form.setFieldValue('agentRuns', [{ agent, runs: 1 }]);
-
-      const autoApproveByDefault = settings?.tasks?.autoApproveByDefault ?? false;
-      form.setFieldValue(
-        'autoApprove',
-        autoApproveByDefault && !!agentMeta[agent]?.autoApproveFlag
-      );
-
-      const shouldAutoGenerate = settings?.tasks?.autoGenerateName !== false;
-      setAutoGenerateName(shouldAutoGenerate);
-      if (!shouldAutoGenerate && !userHasTypedRef.current) {
-        form.setFieldValue('name', '');
-      }
-    });
-
-    return () => {
-      cancel = true;
-    };
-    // form is a stable reference from useForm — safe to include
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // ---------------------------------------------------------------------------
   // Auto-generate name from context (prompt / linked issue) with debounce
@@ -464,7 +263,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, onCreateTask }) => {
                   value={field.state.value}
                   onChange={(val) => {
                     field.handleChange(val);
-                    userHasTypedRef.current = true;
                   }}
                   onBlur={field.handleBlur}
                   placeholder="refactor-api-routes"
@@ -638,6 +436,4 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, onCreateTask }) => {
       </form>
     </DialogContent>
   );
-};
-
-export default TaskModal;
+}

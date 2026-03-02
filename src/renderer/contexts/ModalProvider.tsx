@@ -2,16 +2,16 @@ import { createContext, ReactNode, useCallback, useContext, useRef, useState } f
 import { CloneFromUrlModal } from '@/components/CloneFromUrlModal';
 import { NewProjectModal } from '@/components/NewProjectModal';
 import { UpdateModalOverlay } from '@/components/UpdateModal';
-import { TaskModalOverlay } from '@/components/TaskModal';
 import { AddRemoteProjectModal } from '@/components/ssh/AddRemoteProjectModal';
 import { GithubDeviceFlowModalOverlay } from '@/components/GithubDeviceFlowModal';
+import { CreateTaskModal } from '@/components/TaskModal';
 
 // Define overlays here so we can use them in the showOverlay function
 const modalRegistry = {
   updateModal: UpdateModalOverlay,
   newProjectModal: NewProjectModal,
   cloneFromUrlModal: CloneFromUrlModal,
-  taskModal: TaskModalOverlay,
+  createTaskModal: CreateTaskModal,
   addRemoteProjectModal: AddRemoteProjectModal,
   githubDeviceFlowModal: GithubDeviceFlowModalOverlay,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
