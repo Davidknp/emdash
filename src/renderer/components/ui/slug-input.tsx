@@ -43,13 +43,13 @@ const normalizeForTyping = (input: string): string =>
  * Fully normalizes to a final slug (strict - for submission):
  * - All of normalizeForTyping plus removes leading/trailing hyphens
  */
-const normalizeToSlug = (input: string): string =>
+export const normalizeToSlug = (input: string): string =>
   normalizeForTyping(input).replace(/^-+|-+$/g, '');
 
 /**
  * Checks if a character is valid for a slug
  */
-const isValidSlugChar = (char: string): boolean => /^[a-zA-Z0-9\s-]$/.test(char);
+export const isValidSlugChar = (char: string): boolean => /^[a-zA-Z0-9\s-]$/.test(char);
 
 /**
  * An input that automatically normalizes values to valid slugs.

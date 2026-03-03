@@ -438,32 +438,7 @@ function WorkspaceInner() {
 
   // Wire up the stable openTaskModal ref with current project/task data
   openTaskModalRef.current = () => {
-    showModal('taskModal', {
-      onSuccess: ({
-        name,
-        initialPrompt,
-        agentRuns,
-        linkedLinearIssue,
-        linkedGithubIssue,
-        linkedJiraIssue,
-        autoApprove,
-        useWorktree,
-        baseRef,
-        nameGenerated,
-      }) =>
-        handleCreateTask(
-          name,
-          initialPrompt,
-          agentRuns,
-          linkedLinearIssue,
-          linkedGithubIssue,
-          linkedJiraIssue,
-          autoApprove,
-          useWorktree,
-          baseRef,
-          nameGenerated
-        ),
-    });
+    showModal('createTaskModal', {});
   };
 
   // --- SSH Remote Project handlers ---
