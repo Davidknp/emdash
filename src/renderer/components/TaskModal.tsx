@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
+import { useForm } from '@tanstack/react-form';
 import { Button } from './ui/button';
 import {
   DialogContent,
@@ -7,449 +8,195 @@ import {
   DialogTitle,
   DialogFooter,
 } from './ui/dialog';
-import type { BaseModalProps } from '@/contexts/ModalProvider';
-import { SlugInput } from './ui/slug-input';
-import { Label } from './ui/label';
 import { Separator } from './ui/separator';
-import { MultiAgentDropdown } from './MultiAgentDropdown';
-import { TaskAdvancedSettings } from './TaskAdvancedSettings';
-import { useIntegrationStatus } from './hooks/useIntegrationStatus';
 import { type Agent } from '../types';
-import { type AgentRun } from '../types/chat';
-import { agentMeta } from '../providers/meta';
-import { isValidProviderId } from '@shared/providers/registry';
-import { type LinearIssueSummary } from '../types/linear';
-import { type GitHubIssueSummary } from '../types/github';
-import { type JiraIssueSummary } from '../types/jira';
 import {
   generateFriendlyTaskName,
   normalizeTaskName,
   MAX_TASK_NAME_LENGTH,
 } from '../lib/taskNames';
-import BranchSelect from './BranchSelect';
-import { generateTaskNameFromContext } from '../lib/branchNameGenerator';
 import { useProjectManagementContext } from '../contexts/ProjectManagementContext';
-import { useTaskManagementContext } from '../contexts/TaskManagementContext';
-import { rpc } from '@/lib/rpc';
+import { Field, FieldError, FieldLabel } from './ui/field';
+import { Input } from './ui/input';
+import { useStableArray } from '@/hooks/useStableValue';
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+  ComboboxValue,
+} from './ui/combobox';
 
 const DEFAULT_AGENT: Agent = 'claude';
 
-export interface CreateTaskResult {
-  name: string;
-  initialPrompt?: string;
-  agentRuns?: AgentRun[];
-  linkedLinearIssue?: LinearIssueSummary | null;
-  linkedGithubIssue?: GitHubIssueSummary | null;
-  linkedJiraIssue?: JiraIssueSummary | null;
-  autoApprove?: boolean;
-  useWorktree?: boolean;
-  baseRef?: string;
-  nameGenerated?: boolean;
+type LinkedIssue = {
+  type: 'linear' | 'github' | 'jira';
+  data: Record<string, any>;
+};
+
+function processName(name: string) {
+  return name.toLowerCase().replace(/\s+/g, '-');
 }
 
-interface TaskModalProps {
-  onClose: () => void;
-  onCreateTask: (
-    name: string,
-    initialPrompt?: string,
-    agentRuns?: AgentRun[],
-    linkedLinearIssue?: LinearIssueSummary | null,
-    linkedGithubIssue?: GitHubIssueSummary | null,
-    linkedJiraIssue?: JiraIssueSummary | null,
-    autoApprove?: boolean,
-    useWorktree?: boolean,
-    baseRef?: string,
-    nameGenerated?: boolean
-  ) => void;
+function validateName(name: string, existingNames: string[]) {
+  if (name.length > MAX_TASK_NAME_LENGTH) {
+    return {
+      success: false,
+      error: `Task name is too long (max ${MAX_TASK_NAME_LENGTH} characters)`,
+    };
+  }
+  if (existingNames.includes(normalizeTaskName(name))) {
+    return { success: false, error: 'A Task with this name already exists.' };
+  }
+  const hasInvalidChars = name.split('').some((char) => !isValidSlugChar(char));
+  if (hasInvalidChars) {
+    return { success: false, error: 'Only letters, numbers, and hyphens are allowed' };
+  }
+  return { success: true };
 }
 
-export type TaskModalOverlayProps = BaseModalProps<CreateTaskResult>;
+type BranchOption = {
+  value: string;
+  label: string;
+};
 
-export function TaskModalOverlay({ onSuccess, onClose }: TaskModalOverlayProps) {
+function TaskBranchSelector({ items }: { items: BranchOption[] }) {
   return (
-    <TaskModal
-      onClose={onClose}
-      onCreateTask={(
-        name,
-        initialPrompt,
-        agentRuns,
-        linkedLinearIssue,
-        linkedGithubIssue,
-        linkedJiraIssue,
-        autoApprove,
-        useWorktree,
-        baseRef,
-        nameGenerated
-      ) =>
-        onSuccess({
-          name,
-          initialPrompt,
-          agentRuns,
-          linkedLinearIssue,
-          linkedGithubIssue,
-          linkedJiraIssue,
-          autoApprove,
-          useWorktree,
-          baseRef,
-          nameGenerated,
-        })
-      }
-    />
+    <Combobox items={items} defaultValue={items[0]} autoHighlight>
+      <ComboboxTrigger
+        render={
+          <Button variant="outline" size="sm" className="block w-full">
+            <ComboboxValue />
+          </Button>
+        }
+      />
+      <ComboboxContent className="z-[1000]">
+        <ComboboxInput showTrigger={false} placeholder="Select a branch" />
+        <ComboboxList>
+          {(item) => (
+            <ComboboxItem key={item.value} value={item.value}>
+              {item.label}
+            </ComboboxItem>
+          )}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   );
 }
 
-const TaskModal: React.FC<TaskModalProps> = ({ onClose, onCreateTask }) => {
-  const {
-    selectedProject,
-    projectDefaultBranch: defaultBranch,
-    projectBranchOptions: branchOptions,
-    isLoadingBranches,
-  } = useProjectManagementContext();
-  const { linkedGithubIssueMap } = useTaskManagementContext();
+const DEFAULT_BRANCH_OPTIONS: BranchOption[] = [
+  { value: 'main', label: 'main' },
+  { value: 'develop', label: 'develop' },
+  { value: 'feature/123', label: 'feature/123' },
+  { value: 'feature/456', label: 'feature/456' },
+  { value: 'feature/789', label: 'feature/789' },
+  { value: 'feature/101', label: 'feature/101' },
+];
 
-  const projectName = selectedProject?.name || '';
+export function CreateTaskModal() {
+  const { selectedProject } = useProjectManagementContext();
+
   const existingNames = (selectedProject?.tasks || []).map((w) => w.name);
-  const projectPath = selectedProject?.path;
-  // Form state
-  const [taskName, setTaskName] = useState('');
-  const [agentRuns, setAgentRuns] = useState<AgentRun[]>([{ agent: DEFAULT_AGENT, runs: 1 }]);
-  const [error, setError] = useState<string | null>(null);
-  const [touched, setTouched] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
-
-  // Advanced settings state
-  const [initialPrompt, setInitialPrompt] = useState('');
-  const [selectedLinearIssue, setSelectedLinearIssue] = useState<LinearIssueSummary | null>(null);
-  const [selectedGithubIssue, setSelectedGithubIssue] = useState<GitHubIssueSummary | null>(null);
-  const [selectedJiraIssue, setSelectedJiraIssue] = useState<JiraIssueSummary | null>(null);
-  const [autoApprove, setAutoApprove] = useState(false);
-  const [useWorktree, setUseWorktree] = useState(true);
-
-  // Branch selection state - sync with defaultBranch unless user manually changed it
-  const [selectedBranch, setSelectedBranch] = useState(defaultBranch);
-  const userChangedBranchRef = useRef(false);
-  const taskNameInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!userChangedBranchRef.current) {
-      setSelectedBranch(defaultBranch);
-    }
-  }, [defaultBranch]);
-
-  const handleBranchChange = (value: string) => {
-    setSelectedBranch(value);
-    userChangedBranchRef.current = true;
-  };
-
-  // Auto-name tracking
-  const [autoGeneratedName, setAutoGeneratedName] = useState('');
-  const [autoGenerateName, setAutoGenerateName] = useState(true);
-  const userHasTypedRef = useRef(false);
-  const autoNameInitializedRef = useRef(false);
-  const customNameTrackedRef = useRef(false);
-  // True when the name was derived from context (prompt/issue) — already descriptive
-  const nameFromContextRef = useRef(false);
-
-  // Integration connections — always active since component only mounts when open
-  const integrations = useIntegrationStatus(true);
-
-  // Computed values
-  const activeAgents = useMemo(() => agentRuns.map((ar) => ar.agent), [agentRuns]);
-  const hasAutoApproveSupport = activeAgents.every((id) => !!agentMeta[id]?.autoApproveFlag);
-  const hasInitialPromptSupport = activeAgents.every(
-    (id) => agentMeta[id]?.initialPromptFlag !== undefined
-  );
 
   const normalizedExisting = useMemo(
     () => existingNames.map((n) => normalizeTaskName(n)).filter(Boolean),
     [existingNames]
   );
 
-  // Validation — empty name is allowed (will auto-generate a random fallback)
-  const validate = useCallback(
-    (value: string): string | null => {
-      const normalized = normalizeTaskName(value);
-      if (!normalized) return null; // Empty is OK — will generate a random name
-      if (normalizedExisting.includes(normalized)) return 'A Task with this name already exists.';
-      if (normalized.length > MAX_TASK_NAME_LENGTH)
-        return `Task name is too long (max ${MAX_TASK_NAME_LENGTH} characters).`;
-      return null;
-    },
-    [normalizedExisting]
+  const normalizedExistingStable = useStableArray(normalizedExisting);
+
+  const defaultName = useMemo(
+    () => generateFriendlyTaskName(normalizedExistingStable),
+    [normalizedExistingStable]
   );
 
-  // Clear issues when provider doesn't support them
-  useEffect(() => {
-    if (!hasInitialPromptSupport) {
-      setSelectedLinearIssue(null);
-      setSelectedGithubIssue(null);
-      setSelectedJiraIssue(null);
-      setInitialPrompt('');
-    }
-  }, [hasInitialPromptSupport]);
-
-  // Clear auto-approve if not supported
-  useEffect(() => {
-    if (!hasAutoApproveSupport && autoApprove) setAutoApprove(false);
-  }, [hasAutoApproveSupport, autoApprove]);
-
-  // Reset form and load settings on mount
-  useEffect(() => {
-    // Reset state
-    setTaskName('');
-    setAutoGeneratedName('');
-    setError(null);
-    setTouched(false);
-    setIsFocused(false);
-    setInitialPrompt('');
-    setSelectedLinearIssue(null);
-    setSelectedGithubIssue(null);
-    setSelectedJiraIssue(null);
-    setAutoApprove(false);
-    setUseWorktree(true);
-    userHasTypedRef.current = false;
-    autoNameInitializedRef.current = false;
-    customNameTrackedRef.current = false;
-    nameFromContextRef.current = false;
-    userChangedBranchRef.current = false;
-    setSelectedBranch(defaultBranch);
-
-    // Generate initial name
-    const suggested = generateFriendlyTaskName(normalizedExisting);
-    setAutoGeneratedName(suggested);
-    setTaskName(suggested);
-    setError(validate(suggested));
-    autoNameInitializedRef.current = true;
-
-    // Load settings
-    let cancel = false;
-    rpc.appSettings.get().then((settings) => {
-      if (cancel) return;
-
-      const settingsAgent = settings?.defaultProvider;
-      const agent: Agent = isValidProviderId(settingsAgent)
-        ? (settingsAgent as Agent)
-        : DEFAULT_AGENT;
-      setAgentRuns([{ agent, runs: 1 }]);
-
-      const autoApproveByDefault = settings?.tasks?.autoApproveByDefault ?? false;
-      setAutoApprove(autoApproveByDefault && !!agentMeta[agent]?.autoApproveFlag);
-
-      // Handle auto-generate setting
-      const shouldAutoGenerate = settings?.tasks?.autoGenerateName !== false;
-      setAutoGenerateName(shouldAutoGenerate);
-      if (!shouldAutoGenerate && !userHasTypedRef.current) {
-        setAutoGeneratedName('');
-        setTaskName('');
-        setError(null);
-      }
-    });
-
-    return () => {
-      cancel = true;
-    };
-  }, []);
-
-  // Auto-generate name from context (prompt / linked issue) with debounce
-  useEffect(() => {
-    if (!autoGenerateName || userHasTypedRef.current) return;
-
-    // Immediate for issue linking, debounced for typed prompts
-    const hasIssue = !!(selectedLinearIssue || selectedGithubIssue || selectedJiraIssue);
-    const delay = hasIssue ? 0 : 400;
-
-    const timer = setTimeout(() => {
-      if (userHasTypedRef.current) return;
-      const generated = generateTaskNameFromContext({
-        initialPrompt: initialPrompt || null,
-        linearIssue: selectedLinearIssue,
-        githubIssue: selectedGithubIssue,
-        jiraIssue: selectedJiraIssue,
-      });
-      if (generated) {
-        nameFromContextRef.current = true;
-        setAutoGeneratedName(generated);
-        setTaskName(generated);
-        setError(validate(generated));
-      }
-    }, delay);
-
-    return () => clearTimeout(timer);
-  }, [
-    autoGenerateName,
-    initialPrompt,
-    selectedLinearIssue,
-    selectedGithubIssue,
-    selectedJiraIssue,
-    validate,
-  ]);
-
-  const handleNameChange = (val: string) => {
-    setTaskName(val);
-    setError(validate(val));
-    userHasTypedRef.current = true;
-
-    // Track custom naming for telemetry (only once per session)
-    if (
-      autoGeneratedName &&
-      val !== autoGeneratedName &&
-      val.trim() &&
-      !customNameTrackedRef.current
-    ) {
-      customNameTrackedRef.current = true;
-      void (async () => {
-        const { captureTelemetry } = await import('../lib/telemetryClient');
-        captureTelemetry('task_custom_named', { custom_name: 'true' });
-      })();
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setTouched(true);
-
-    const err = validate(taskName);
-    if (err) {
-      setError(err);
-      return;
-    }
-
-    // Determine the final task name and whether it should be eligible for
-    // post-creation auto-rename (nameGenerated flag).
-    let finalName = normalizeTaskName(taskName);
-    let isNameGenerated = false;
-    if (!finalName) {
-      // No name at all — use a random fallback; mark for post-creation rename
-      finalName = generateFriendlyTaskName(normalizedExisting);
-      isNameGenerated = true;
-    } else if (!userHasTypedRef.current && !nameFromContextRef.current) {
-      // User never touched the name field AND the name wasn't derived from
-      // context (prompt/issue) — it's still a random fallback name.
-      // Mark for post-creation rename so the first terminal message can improve it.
-      isNameGenerated = true;
-    }
-    // When the name was auto-generated from context (prompt/issue),
-    // it's already descriptive — don't mark it for post-creation rename.
-
-    // Close modal immediately - task creation happens in background
-    // The task will appear in sidebar via optimistic UI update
-    onClose();
-
-    // Fire and forget - don't await
-    try {
-      onCreateTask(
-        finalName,
-        hasInitialPromptSupport && initialPrompt.trim() ? initialPrompt.trim() : undefined,
-        agentRuns,
-        selectedLinearIssue,
-        selectedGithubIssue,
-        selectedJiraIssue,
-        hasAutoApproveSupport ? autoApprove : false,
-        useWorktree,
-        selectedBranch,
-        isNameGenerated
-      );
-    } catch (error) {
-      console.error('Failed to create task:', error);
-    }
-  };
+  const form = useForm({
+    validators: {
+      onChange: ({ value }) => {
+        const { success, error } = validateName(value.name, normalizedExisting);
+        if (success) return;
+        return {
+          fields: {
+            name: error,
+          },
+        };
+      },
+    },
+    defaultValues: {
+      name: defaultName,
+      projectId: selectedProject?.id,
+      baseRef: '',
+      initialPrompt: '',
+      autoApprove: false,
+      useWorktree: true,
+      linkedIssue: undefined,
+      agentRuns: {
+        [DEFAULT_AGENT]: 1,
+      },
+    },
+  });
 
   return (
     <DialogContent
       className="max-h-[calc(100vh-48px)] max-w-md overflow-visible"
-      initialFocus={taskNameInputRef}
+      onOpenAutoFocus={(e) => e.preventDefault()}
     >
       <DialogHeader>
         <DialogTitle>New Task</DialogTitle>
         <DialogDescription className="text-xs">
           Create a task and open the agent workspace.
         </DialogDescription>
-        <div className="space-y-1 pt-1">
-          <p className="text-sm font-medium text-foreground">{projectName}</p>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">from</span>
-            {branchOptions.length > 0 ? (
-              <BranchSelect
-                value={selectedBranch}
-                onValueChange={handleBranchChange}
-                options={branchOptions}
-                isLoading={isLoadingBranches}
-                variant="ghost"
-              />
-            ) : (
-              <span className="text-xs text-muted-foreground">
-                {isLoadingBranches ? 'Loading...' : selectedBranch || defaultBranch}
-              </span>
-            )}
-          </div>
-        </div>
       </DialogHeader>
 
       <Separator />
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <Label htmlFor="task-name" className="mb-2 block">
-            Task name (optional)
-          </Label>
-          <SlugInput
-            ref={taskNameInputRef}
-            id="task-name"
-            value={taskName}
-            onChange={handleNameChange}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => {
-              setTouched(true);
-              setIsFocused(false);
-            }}
-            placeholder="refactor-api-routes"
-            maxLength={MAX_TASK_NAME_LENGTH}
-            className={`w-full ${touched && error && !isFocused ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive' : ''}`}
-            aria-invalid={touched && !!error && !isFocused}
-          />
-        </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          form.handleSubmit();
+        }}
+        className="space-y-4"
+      >
+        {/* Task name */}
+        <form.Field name="name">
+          {(field) => {
+            const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 
-        <div className="flex items-center gap-4">
-          <Label className="shrink-0">Agent</Label>
-          <MultiAgentDropdown agentRuns={agentRuns} onChange={setAgentRuns} />
-        </div>
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Name</FieldLabel>
+                <Input
+                  id={field.name}
+                  name={field.name}
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  type="text"
+                  onChange={(e) => field.handleChange(processName(e.target.value))}
+                />
+                {isInvalid && (
+                  <FieldError
+                    errors={field.state.meta.errors.map((error) => ({ message: error }))}
+                  />
+                )}
+              </Field>
+            );
+          }}
+        </form.Field>
 
-        <TaskAdvancedSettings
-          isOpen={true}
-          projectPath={projectPath}
-          useWorktree={useWorktree}
-          onUseWorktreeChange={setUseWorktree}
-          autoApprove={autoApprove}
-          onAutoApproveChange={setAutoApprove}
-          hasAutoApproveSupport={hasAutoApproveSupport}
-          initialPrompt={initialPrompt}
-          onInitialPromptChange={setInitialPrompt}
-          hasInitialPromptSupport={hasInitialPromptSupport}
-          selectedLinearIssue={selectedLinearIssue}
-          onLinearIssueChange={setSelectedLinearIssue}
-          isLinearConnected={integrations.isLinearConnected}
-          onLinearConnect={integrations.handleLinearConnect}
-          selectedGithubIssue={selectedGithubIssue}
-          onGithubIssueChange={setSelectedGithubIssue}
-          linkedGithubIssueMap={linkedGithubIssueMap}
-          isGithubConnected={integrations.isGithubConnected}
-          onGithubConnect={integrations.handleGithubConnect}
-          githubLoading={integrations.githubLoading}
-          githubInstalled={integrations.githubInstalled}
-          selectedJiraIssue={selectedJiraIssue}
-          onJiraIssueChange={setSelectedJiraIssue}
-          isJiraConnected={integrations.isJiraConnected}
-          onJiraConnect={integrations.handleJiraConnect}
-        />
+        <TaskBranchSelector items={DEFAULT_BRANCH_OPTIONS} />
 
         <DialogFooter>
-          <Button type="submit" disabled={!!error}>
-            Create
-          </Button>
+          <form.Subscribe selector={(state) => state.canSubmit}>
+            {(canSubmit) => (
+              <Button type="submit" disabled={!canSubmit}>
+                Create
+              </Button>
+            )}
+          </form.Subscribe>
         </DialogFooter>
       </form>
     </DialogContent>
   );
-};
-
-export default TaskModal;
+}
