@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useLayoutEffect, useMemo } from 'react';
 import type { CreateConversationParams } from '@shared/conversations';
 import { makePtySessionId } from '@shared/ptySessionId';
 import { useConversationsContext } from '@renderer/core/conversations/conversation-data-provider';
@@ -50,10 +50,7 @@ export function useConversations({ taskId, projectId }: { projectId: string; tas
     [deleteConversation, projectId, taskId, unregisterSession]
   );
 
-  // Start sessions for all existing conversations whenever the list changes.
-  // registerSession() is idempotent — its boolean return value gates the RPC
-  // so startSession is only called once per conversation.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (conversations.length === 0) return;
     const initialSize = getConversationsPaneSize();
     for (const conv of conversations) {
