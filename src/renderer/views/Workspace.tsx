@@ -2,6 +2,7 @@ import { AppKeyboardShortcuts } from '@renderer/components/AppKeyboardShortcuts'
 import { LeftSidebar } from '@renderer/components/sidebar/left-sidebar';
 import { Toaster } from '@renderer/components/ui/toaster';
 import { ModalRenderer } from '@renderer/core/modal/modal-renderer';
+import { NavigationHistoryProvider } from '@renderer/core/view/navigation-history-provider';
 import {
   useViewLayoutOverride,
   useWorkspaceSlots,
@@ -15,7 +16,7 @@ export function Workspace() {
   const { WrapView } = useWorkspaceSlots();
   const { wrapParams } = useWorkspaceWrapParams();
   return (
-    <>
+    <NavigationHistoryProvider>
       <AppKeyboardShortcuts />
       <WorkspaceLayout
         leftSidebar={<LeftSidebar />}
@@ -27,7 +28,7 @@ export function Workspace() {
         }
       />
       <Toaster />
-    </>
+    </NavigationHistoryProvider>
   );
 }
 

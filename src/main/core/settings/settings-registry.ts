@@ -41,6 +41,9 @@ export const SETTINGS_DEFAULTS = {
     taskHoverAction: 'delete' as const,
     autoRightSidebarBehavior: false,
   },
+  navigation: {
+    trackpadSwipe: true,
+  },
   browserPreview: {
     enabled: true,
   },

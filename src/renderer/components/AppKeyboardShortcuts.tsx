@@ -2,6 +2,7 @@ import { useHotkey } from '@tanstack/react-hotkeys';
 import { useAppSettingsKey } from '@renderer/core/app/use-app-settings-key';
 import { useShowModal } from '@renderer/core/modal/modal-provider';
 import { useWorkspaceLayoutContext } from '@renderer/core/view/layout-provider';
+import { useNavigationHistory } from '@renderer/core/view/navigation-history-provider';
 import { useNavigate, useParams, useWorkspaceSlots } from '@renderer/core/view/navigation-provider';
 import { getEffectiveHotkey } from '@renderer/hooks/useKeyboardShortcuts';
 import { useTheme } from '@renderer/hooks/useTheme';
@@ -19,6 +20,7 @@ export function AppKeyboardShortcuts() {
   const { toggleLeft, toggleRight } = useWorkspaceLayoutContext();
   const { toggleTheme } = useTheme();
   const { navigate } = useNavigate();
+  const { canGoBack, canGoForward, goBack, goForward } = useNavigationHistory();
 
   // Resolve current project context from whichever view is active
   const { currentView } = useWorkspaceSlots();
@@ -44,6 +46,14 @@ export function AppKeyboardShortcuts() {
   useHotkey(getEffectiveHotkey('newProject', keyboard), () =>
     showNewProject({ strategy: 'local', mode: 'pick' })
   );
+
+  useHotkey(getEffectiveHotkey('navigateBack', keyboard), () => goBack(), {
+    enabled: canGoBack,
+  });
+
+  useHotkey(getEffectiveHotkey('navigateForward', keyboard), () => goForward(), {
+    enabled: canGoForward,
+  });
 
   useHotkey(
     getEffectiveHotkey('newTask', keyboard),

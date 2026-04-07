@@ -3,6 +3,7 @@ import { BrowserWindow } from 'electron';
 import appIcon from '@/assets/images/emdash/emdash_logo.png?asset';
 import { capture, checkAndReportDailyActiveUser } from '@main/lib/telemetry';
 import { registerExternalLinkHandlers } from '@main/utils/externalLinks';
+import { appSettingsService } from '@main/core/settings/settings-service';
 import { APP_ORIGIN } from './protocol';
 
 let mainWindow: BrowserWindow | null = null;
@@ -53,6 +54,31 @@ export function createMainWindow(): BrowserWindow {
     mainWindow?.setWindowButtonVisibility(true);
     checkAndReportDailyActiveUser();
   });
+
+  // macOS trackpad two-finger swipe navigation (respects setting)
+  if (process.platform === 'darwin') {
+    mainWindow.on('swipe', (_event, direction) => {
+      void appSettingsService.get('navigation').then((navigation) => {
+        if (!navigation.trackpadSwipe) return;
+        if (direction === 'left') {
+          mainWindow?.webContents.send('navigate:back');
+        } else if (direction === 'right') {
+          mainWindow?.webContents.send('navigate:forward');
+        }
+      });
+    });
+  }
+
+  // Windows/Linux mouse back/forward buttons via app-command
+  if (process.platform !== 'darwin') {
+    mainWindow.on('app-command', (_event, command) => {
+      if (command === 'browser-backward') {
+        mainWindow?.webContents.send('navigate:back');
+      } else if (command === 'browser-forward') {
+        mainWindow?.webContents.send('navigate:forward');
+      }
+    });
+  }
 
   // Cleanup reference on close
   mainWindow.on('closed', () => {
