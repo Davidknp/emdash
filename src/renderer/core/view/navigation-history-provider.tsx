@@ -123,47 +123,41 @@ export function NavigationHistoryProvider({ children }: { children: ReactNode })
   useEffect(() => {
     // macOS 2-finger trackpad swipe navigation.
     // Electron's 'swipe' event only fires for 3-finger swipes, so we detect
-    // horizontal wheel gestures here and trigger back/forward ourselves.
+    // horizontal wheel gestures here. With scrollBounce enabled in main,
+    // Chromium forwards horizontal wheel events even when the target has
+    // no scrollable horizontal overflow.
     let accumX = 0;
-    let accumY = 0;
+    let lastTime = 0;
     let triggered = false;
-    let resetTimer: ReturnType<typeof setTimeout> | null = null;
-    const THRESHOLD = 80;
-
-    const reset = () => {
-      accumX = 0;
-      accumY = 0;
-      triggered = false;
-    };
+    const THRESHOLD = 60;
+    const IDLE_RESET_MS = 150;
 
     const handleWheel = (event: WheelEvent) => {
-      // Only trackpad gestures produce these continuous, non-integer deltas
-      // with deltaMode === 0. Ignore mouse wheels and pinch/ctrl-zoom.
-      if (event.ctrlKey || event.deltaMode !== 0) return;
+      if (event.ctrlKey) return; // pinch-zoom
 
-      // Don't hijack scrolling inside scrollable containers.
+      const now = event.timeStamp;
+      if (now - lastTime > IDLE_RESET_MS) {
+        accumX = 0;
+        triggered = false;
+      }
+      lastTime = now;
+
+      // Must be a horizontally dominant gesture.
+      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+
+      // Skip if a horizontally scrollable ancestor would consume the gesture.
       let node = event.target as HTMLElement | null;
       while (node && node !== document.body) {
-        const style = window.getComputedStyle(node);
-        const overflowX = style.overflowX;
-        if (
-          (overflowX === 'auto' || overflowX === 'scroll') &&
-          node.scrollWidth > node.clientWidth
-        ) {
-          return;
+        if (node.scrollWidth > node.clientWidth + 1) {
+          const overflowX = window.getComputedStyle(node).overflowX;
+          if (overflowX === 'auto' || overflowX === 'scroll') return;
         }
         node = node.parentElement;
       }
 
       accumX += event.deltaX;
-      accumY += event.deltaY;
-
-      if (resetTimer) clearTimeout(resetTimer);
-      resetTimer = setTimeout(reset, 200);
 
       if (triggered) return;
-      if (Math.abs(accumX) < Math.abs(accumY) * 1.5) return;
-
       if (accumX <= -THRESHOLD) {
         triggered = true;
         goBack();
@@ -173,10 +167,9 @@ export function NavigationHistoryProvider({ children }: { children: ReactNode })
       }
     };
 
-    window.addEventListener('wheel', handleWheel, { passive: true });
+    window.addEventListener('wheel', handleWheel, { passive: true, capture: true });
     return () => {
-      window.removeEventListener('wheel', handleWheel);
-      if (resetTimer) clearTimeout(resetTimer);
+      window.removeEventListener('wheel', handleWheel, { capture: true });
     };
   }, [goBack, goForward]);
 

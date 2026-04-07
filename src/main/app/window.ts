@@ -1,9 +1,9 @@
 import { join } from 'node:path';
 import { BrowserWindow } from 'electron';
 import appIcon from '@/assets/images/emdash/emdash_logo.png?asset';
+import { appSettingsService } from '@main/core/settings/settings-service';
 import { capture, checkAndReportDailyActiveUser } from '@main/lib/telemetry';
 import { registerExternalLinkHandlers } from '@main/utils/externalLinks';
-import { appSettingsService } from '@main/core/settings/settings-service';
 import { APP_ORIGIN } from './protocol';
 
 let mainWindow: BrowserWindow | null = null;
@@ -25,6 +25,10 @@ export function createMainWindow(): BrowserWindow {
       // Allow using <webview> in renderer for in‑app browser pane.
       // The webview runs in a separate process; nodeIntegration remains disabled.
       webviewTag: true,
+      // Enables rubber-band scrolling on macOS, which also makes Chromium
+      // emit horizontal wheel events for 2-finger trackpad swipes when the
+      // page can't scroll further — required for our swipe-nav handler.
+      scrollBounce: true,
       // __dirname resolves to out/main/ at runtime; preload is at out/preload/index.mjs
       preload: join(__dirname, '../preload/index.mjs'),
     },
