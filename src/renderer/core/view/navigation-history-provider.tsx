@@ -121,6 +121,66 @@ export function NavigationHistoryProvider({ children }: { children: ReactNode })
   }, [goBack, goForward]);
 
   useEffect(() => {
+    // macOS 2-finger trackpad swipe navigation.
+    // Electron's 'swipe' event only fires for 3-finger swipes, so we detect
+    // horizontal wheel gestures here and trigger back/forward ourselves.
+    let accumX = 0;
+    let accumY = 0;
+    let triggered = false;
+    let resetTimer: ReturnType<typeof setTimeout> | null = null;
+    const THRESHOLD = 80;
+
+    const reset = () => {
+      accumX = 0;
+      accumY = 0;
+      triggered = false;
+    };
+
+    const handleWheel = (event: WheelEvent) => {
+      // Only trackpad gestures produce these continuous, non-integer deltas
+      // with deltaMode === 0. Ignore mouse wheels and pinch/ctrl-zoom.
+      if (event.ctrlKey || event.deltaMode !== 0) return;
+
+      // Don't hijack scrolling inside scrollable containers.
+      let node = event.target as HTMLElement | null;
+      while (node && node !== document.body) {
+        const style = window.getComputedStyle(node);
+        const overflowX = style.overflowX;
+        if (
+          (overflowX === 'auto' || overflowX === 'scroll') &&
+          node.scrollWidth > node.clientWidth
+        ) {
+          return;
+        }
+        node = node.parentElement;
+      }
+
+      accumX += event.deltaX;
+      accumY += event.deltaY;
+
+      if (resetTimer) clearTimeout(resetTimer);
+      resetTimer = setTimeout(reset, 200);
+
+      if (triggered) return;
+      if (Math.abs(accumX) < Math.abs(accumY) * 1.5) return;
+
+      if (accumX <= -THRESHOLD) {
+        triggered = true;
+        goBack();
+      } else if (accumX >= THRESHOLD) {
+        triggered = true;
+        goForward();
+      }
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: true });
+    return () => {
+      window.removeEventListener('wheel', handleWheel);
+      if (resetTimer) clearTimeout(resetTimer);
+    };
+  }, [goBack, goForward]);
+
+  useEffect(() => {
     const eventOn = window.electronAPI?.eventOn;
     if (!eventOn) return;
 
@@ -138,7 +198,9 @@ export function NavigationHistoryProvider({ children }: { children: ReactNode })
     [canGoBack, canGoForward, goBack, goForward]
   );
 
-  return <NavigationHistoryContext.Provider value={value}>{children}</NavigationHistoryContext.Provider>;
+  return (
+    <NavigationHistoryContext.Provider value={value}>{children}</NavigationHistoryContext.Provider>
+  );
 }
 
 export function useNavigationHistory() {
