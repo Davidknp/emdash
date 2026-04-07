@@ -11,11 +11,14 @@ import { ptySessionRegistry } from '@main/core/pty/pty-session-registry';
 import { resolveSshCommand } from '@main/core/pty/spawn-utils';
 import { openSsh2Pty } from '@main/core/pty/ssh2-pty';
 import { killTmuxSession, makeTmuxSessionName } from '@main/core/pty/tmux-session-name';
+import { appSettingsService } from '@main/core/settings/settings-service';
 import type { SshClientProxy } from '@main/core/ssh/ssh-client-proxy';
 import type { ExecFn } from '@main/core/utils/exec';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { buildAgentCommand } from './agent-command';
+import { resolveAutoApproveEnabled } from './auto-approve';
+import { SessionRespawnTracker } from './session-respawn';
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
@@ -23,7 +26,7 @@ const MAX_RESPAWNS = 2;
 
 export class SshConversationProvider implements ConversationProvider {
   private sessions = new Map<string, Pty>();
-  private respawnCounts = new Map<string, number>();
+  private readonly respawnTracker: SessionRespawnTracker;
   private readonly projectId: string;
   private readonly taskPath: string;
   private readonly taskId: string;
@@ -60,6 +63,10 @@ export class SshConversationProvider implements ConversationProvider {
     this.shellSetup = shellSetup;
     this.exec = exec;
     this.proxy = proxy;
+    this.respawnTracker = new SessionRespawnTracker({
+      maxRespawns: MAX_RESPAWNS,
+      providerName: 'SshConversationProvider',
+    });
   }
 
   async startSession(
@@ -83,9 +90,15 @@ export class SshConversationProvider implements ConversationProvider {
       remoteFs: new SshFileSystem(this.proxy, '/'),
     });
 
+    const taskSettings = await appSettingsService.get('tasks');
+    const autoApprove = resolveAutoApproveEnabled({
+      conversationAutoApprove: conversation.autoApprove,
+      autoApproveByDefault: taskSettings.autoApproveByDefault,
+    });
+
     const { command, args } = await buildAgentCommand({
       providerId: conversation.providerId,
-      autoApprove: conversation.autoApprove,
+      autoApprove,
       sessionId: conversation.id,
       isResuming,
       initialPrompt,
@@ -102,7 +115,7 @@ export class SshConversationProvider implements ConversationProvider {
       cwd: this.taskPath,
       shellSetup: this.shellSetup,
       tmuxSessionName,
-      autoApprove: conversation.autoApprove ?? false,
+      autoApprove,
       resume: isResuming,
     };
 
@@ -145,30 +158,22 @@ export class SshConversationProvider implements ConversationProvider {
         taskId: conversation.taskId,
         exitCode,
       });
-      if (shouldRespawn && !this.tmux) {
-        const count = (this.respawnCounts.get(sessionId) ?? 0) + 1;
-        this.respawnCounts.set(sessionId, count);
 
-        if (count > MAX_RESPAWNS && !isResuming) {
-          log.error('SshConversationProvider: respawn limit reached, giving up', {
-            conversationId: conversation.id,
-          });
-          this.respawnCounts.delete(sessionId);
-          return;
-        }
+      if (!shouldRespawn || this.tmux) return;
 
-        const resumeNext = isResuming && count <= MAX_RESPAWNS;
-        if (count > MAX_RESPAWNS) this.respawnCounts.set(sessionId, 0);
+      const decision = this.respawnTracker.evaluate(sessionId, isResuming);
+      if (!decision.shouldRespawn) return;
 
-        setTimeout(() => {
-          this.startSession(conversation, initialSize, resumeNext, initialPrompt).catch((e) => {
+      setTimeout(() => {
+        this.startSession(conversation, initialSize, decision.resumeNext, initialPrompt).catch(
+          (e) => {
             log.error('SshConversationProvider: respawn failed', {
               conversationId: conversation.id,
               error: String(e),
             });
-          });
-        }, 500);
-      }
+          }
+        );
+      }, 500);
     });
 
     ptySessionRegistry.register(sessionId, pty);
