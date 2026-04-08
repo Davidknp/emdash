@@ -84,6 +84,24 @@ declare global {
         reason?: string;
         durationMs?: number;
       }>;
+
+      // Automations compatibility surface
+      automationsList: () => Promise<any>;
+      automationsGet: (args: { id: string }) => Promise<any>;
+      automationsCreate: (args: unknown) => Promise<any>;
+      automationsUpdate: (args: unknown) => Promise<any>;
+      automationsDelete: (args: { id: string }) => Promise<any>;
+      automationsToggle: (args: { id: string }) => Promise<any>;
+      automationsRunLogs: (args: { automationId: string; limit?: number }) => Promise<any>;
+      automationsTriggerNow: (args: { id: string }) => Promise<any>;
+      automationsCompleteRun: (args: unknown) => Promise<any>;
+      automationsDrainTriggers: () => Promise<any>;
+      onAutomationTriggerAvailable: (cb: () => void) => () => void;
+
+      // Legacy helpers used by ported automations hook
+      worktreeCreate: (projectId: string, taskId: string, branch?: string) => Promise<any>;
+      worktreeRemove: (projectId: string, taskId: string) => Promise<any>;
+      onPtyExit: (id: string, cb: (payload: { exitCode: number }) => void) => () => void;
     };
   }
 }

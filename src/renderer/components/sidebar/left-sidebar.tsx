@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { FolderPlus, MessageSquareShare, Plug, Puzzle, Settings } from 'lucide-react';
+import { Bot, FolderPlus, MessageSquareShare, Plug, Puzzle, Settings } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React, { useEffect, useRef } from 'react';
 import { useGithubContext } from '@renderer/core/github-context-provider';
@@ -151,6 +151,15 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
                 <span className="truncate min-w-0">Add Project</span>
               </span>
               <ShortcutHint settingsKey="newProject" />
+            </SidebarMenuButton>
+            <SidebarMenuButton
+              isActive={isCurrentView(currentView, 'automations')}
+              onClick={() => navigate('automations')}
+              aria-label="Automations"
+              className="w-full justify-start"
+            >
+              <Bot className="h-5 w-5 sm:h-4 sm:w-4" />
+              Automations
             </SidebarMenuButton>
             <SidebarMenuButton
               isActive={isCurrentView(currentView, 'skills')}

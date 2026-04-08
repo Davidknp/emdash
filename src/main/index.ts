@@ -10,6 +10,7 @@ import { providerTokenRegistry } from './core/account/provider-token-registry';
 import { emdashAccountService } from './core/account/services/emdash-account-service';
 import { agentHookService } from './core/agent-hooks/agent-hook-service';
 import { appService } from './core/app/service';
+import { startAutomationsRuntime, stopAutomationsRuntime } from './core/automations/controller';
 import { localDependencyManager } from './core/dependencies/dependency-manager';
 import { editorBufferService } from './core/editor/editor-buffer-service';
 import { githubAuthService } from './core/github/services/github-auth-service';
@@ -106,6 +107,8 @@ app.whenReady().then(async () => {
 
   registerRPCRouter(rpcRouter, ipcMain);
 
+  await startAutomationsRuntime();
+
   localDependencyManager.probeAll().catch((e) => {
     log.error('Failed to probe dependencies:', e);
   });
@@ -130,6 +133,7 @@ app.on('before-quit', () => {
 
   agentHookService.stop();
   updateService.shutdown();
+  stopAutomationsRuntime();
   projectManager.shutdown().catch((e) => {
     log.error('Failed to shutdown project manager:', e);
   });

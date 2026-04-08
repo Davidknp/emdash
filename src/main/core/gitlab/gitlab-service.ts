@@ -35,6 +35,19 @@ export interface GitLabIssueSummary {
   updatedAt: string | null;
 }
 
+export interface GitLabMergeRequestSummary {
+  id: number;
+  iid: number;
+  title: string;
+  description: string | null;
+  webUrl: string | null;
+  state: string | null;
+  sourceBranch: string | null;
+  labels: string[];
+  assignee: { name: string; username: string } | null;
+  updatedAt: string | null;
+}
+
 const gitlabKV = new KV<GitLabKVSchema>('gitlab');
 
 export class GitlabService {
@@ -180,6 +193,34 @@ export class GitlabService {
     }
   }
 
+  async initialFetchMergeRequests(
+    projectPath: string,
+    limit = 50
+  ): Promise<GitLabMergeRequestSummary[]> {
+    const path = projectPath.trim();
+    if (!path) {
+      throw new Error('Project path is required.');
+    }
+
+    const perPage = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 100)) : 50;
+    const { client, projectId } = await this.resolveProject(path);
+
+    try {
+      const mergeRequests = (await client.MergeRequests.all({
+        projectId,
+        state: 'opened',
+        orderBy: 'updated_at',
+        sort: 'desc',
+        perPage,
+        maxPages: 1,
+      })) as unknown[];
+
+      return this.normalizeMergeRequests(mergeRequests);
+    } catch (error) {
+      throw new Error(this.toErrorMessage(error, 'Failed to fetch GitLab merge requests.'));
+    }
+  }
+
   private async requireAuth(): Promise<{ instanceUrl: string; client: Gitlab }> {
     const connection = await this.readConnection();
     if (!connection) {
@@ -300,6 +341,13 @@ export class GitlabService {
       .filter((issue): issue is GitLabIssueSummary => issue !== null);
   }
 
+  private normalizeMergeRequests(rawMergeRequests: unknown[]): GitLabMergeRequestSummary[] {
+    const mergeRequests = Array.isArray(rawMergeRequests) ? rawMergeRequests : [];
+    return mergeRequests
+      .map((item) => this.mapMergeRequest(item))
+      .filter((mergeRequest): mergeRequest is GitLabMergeRequestSummary => mergeRequest !== null);
+  }
+
   private mapIssue(raw: unknown, projectName: string | null): GitLabIssueSummary | null {
     const item = this.asRecord(raw);
     if (!item) return null;
@@ -350,6 +398,52 @@ export class GitlabService {
       assignee,
       labels,
       updatedAt,
+    };
+  }
+
+  private mapMergeRequest(raw: unknown): GitLabMergeRequestSummary | null {
+    const item = this.asRecord(raw);
+    if (!item) return null;
+
+    const id = this.readNumber(item.id);
+    const iid = this.readNumber(item.iid);
+    if (id === null || iid === null) return null;
+
+    const assigneeRecord =
+      this.asRecord(item.assignee) ??
+      (Array.isArray(item.assignees) ? this.asRecord(item.assignees[0]) : null);
+    const assigneeName =
+      this.readString(assigneeRecord?.name) ?? this.readString(assigneeRecord?.username);
+    const assigneeUsername =
+      this.readString(assigneeRecord?.username) ?? this.readString(assigneeRecord?.name);
+
+    const labels = Array.isArray(item.labels)
+      ? item.labels
+          .map((label) => {
+            if (typeof label === 'string') return label;
+            const labelObj = this.asRecord(label);
+            return this.readString(labelObj?.name);
+          })
+          .filter((label): label is string => Boolean(label))
+      : [];
+
+    return {
+      id,
+      iid,
+      title: this.readString(item.title) ?? '',
+      description: this.readString(item.description),
+      webUrl: this.readString(item.web_url) ?? this.readString(item.webUrl),
+      state: this.readString(item.state),
+      sourceBranch: this.readString(item.source_branch) ?? this.readString(item.sourceBranch),
+      labels,
+      assignee:
+        assigneeName || assigneeUsername
+          ? {
+              name: assigneeName ?? assigneeUsername ?? '',
+              username: assigneeUsername ?? assigneeName ?? '',
+            }
+          : null,
+      updatedAt: this.readString(item.updated_at) ?? this.readString(item.updatedAt),
     };
   }
 

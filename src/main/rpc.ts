@@ -1,6 +1,7 @@
 import { createRPCRouter } from '../shared/ipc/rpc';
 import { accountController } from './core/account/controller';
 import { appController } from './core/app/controller';
+import { automationsController } from './core/automations/controller';
 import { conversationController } from './core/conversations/controller';
 import { dependenciesController } from './core/dependencies/controller';
 import { editorBufferController } from './core/editor/controller';
@@ -9,6 +10,7 @@ import { filesController } from './core/fs/controller';
 import { gitController } from './core/git/controller';
 import { githubController } from './core/github/controller';
 import { gitlabController } from './core/gitlab/controller';
+import { integrationsController } from './core/integrations/controller';
 import { jiraController } from './core/jira/controller';
 import { lineCommentsController } from './core/line-comments';
 import { linearController } from './core/linear/controller';
@@ -30,7 +32,9 @@ import { viewStateController } from './core/view-state/controller';
 export const rpcRouter = createRPCRouter({
   account: accountController,
   app: appController,
+  automations: automationsController,
   appSettings: appSettingsController,
+  integrations: integrationsController,
   providerSettings: providerSettingsController,
   repository: repositoryController,
   fs: filesController,
