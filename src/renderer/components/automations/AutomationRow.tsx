@@ -18,7 +18,6 @@ import type { Project } from '../../types/app';
 import AgentLogo from '../AgentLogo';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
-import { getPhaseLabel, useRunningAutomations } from './useRunningAutomations';
 import {
   formatRelativeTime,
   formatScheduleLabel,
@@ -65,17 +64,14 @@ const AutomationRow: React.FC<AutomationRowProps> = ({
   const isIntegrationDisconnected =
     requiredIntegration && integrationStatuses ? !integrationStatuses[requiredIntegration] : false;
 
-  const { getRunState } = useRunningAutomations();
-  const runState = getRunState(automation.id);
-  const isTriggering = !!runState && runState.phase !== 'error';
-  const canRunNow = automation.mode !== 'trigger' && !isTriggering;
+  const canRunNow = automation.mode !== 'trigger';
 
   const projectLabel = project?.name ?? automation.projectName ?? 'Unknown';
 
   return (
     <div
       className={`group flex items-center gap-3 rounded-lg border border-border bg-muted/20 p-4 transition-all hover:bg-muted/40 ${
-        !isActive && !isTriggering ? 'opacity-45' : ''
+        !isActive ? 'opacity-45' : ''
       }`}
     >
       {agent?.logo ? (
@@ -91,11 +87,7 @@ const AutomationRow: React.FC<AutomationRowProps> = ({
         <p className="mt-0.5 truncate text-xs text-muted-foreground">{projectLabel}</p>
       </div>
 
-      {isTriggering && (
-        <span className="text-xs text-muted-foreground">{getPhaseLabel(runState.phase)}</span>
-      )}
-
-      {!isTriggering && isIntegrationDisconnected && requiredIntegration && (
+      {isIntegrationDisconnected && requiredIntegration && (
         <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
           <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
           <span className="hidden sm:inline">
@@ -104,29 +96,26 @@ const AutomationRow: React.FC<AutomationRowProps> = ({
         </span>
       )}
 
-      {!isTriggering &&
-        automation.mode === 'trigger' &&
-        automation.triggerType &&
-        !isIntegrationDisconnected && (
-          <span className="hidden items-center gap-1 text-xs text-muted-foreground/40 sm:flex">
-            {getTriggerIcon(automation.triggerType)}
-            {formatTriggerLabel(automation.triggerType)}
-          </span>
-        )}
-      {!isTriggering && automation.mode !== 'trigger' && (
+      {automation.mode === 'trigger' && automation.triggerType && !isIntegrationDisconnected && (
+        <span className="hidden items-center gap-1 text-xs text-muted-foreground/40 sm:flex">
+          {getTriggerIcon(automation.triggerType)}
+          {formatTriggerLabel(automation.triggerType)}
+        </span>
+      )}
+      {automation.mode !== 'trigger' && (
         <span className="hidden items-center gap-1 text-xs text-muted-foreground/40 sm:flex">
           <Clock className="h-3 w-3" />
           {formatScheduleLabel(automation.schedule)}
         </span>
       )}
 
-      {!isTriggering && automation.nextRunAt && isActive && automation.mode !== 'trigger' && (
+      {automation.nextRunAt && isActive && automation.mode !== 'trigger' && (
         <span className="hidden text-xs text-muted-foreground/40 lg:inline">
           next {formatRelativeTime(automation.nextRunAt)}
         </span>
       )}
 
-      {automation.runCount > 0 && !isTriggering && (
+      {automation.runCount > 0 && (
         <button
           type="button"
           className="hidden text-xs text-muted-foreground/30 transition-colors hover:text-foreground/60 sm:inline"
@@ -139,13 +128,11 @@ const AutomationRow: React.FC<AutomationRowProps> = ({
         </button>
       )}
 
-      {!isTriggering && (
-        <span
-          className={`text-xs font-medium ${isActive ? 'text-emerald-500/70' : 'text-muted-foreground/40'}`}
-        >
-          {isActive ? 'Active' : 'Paused'}
-        </span>
-      )}
+      <span
+        className={`text-xs font-medium ${isActive ? 'text-emerald-500/70' : 'text-muted-foreground/40'}`}
+      >
+        {isActive ? 'Active' : 'Paused'}
+      </span>
 
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <Tooltip>
@@ -183,7 +170,6 @@ const AutomationRow: React.FC<AutomationRowProps> = ({
               }}
               aria-label={isActive ? 'Pause' : 'Resume'}
               className="h-7 w-7 text-muted-foreground"
-              disabled={isTriggering}
             >
               {isActive ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             </Button>
@@ -201,7 +187,6 @@ const AutomationRow: React.FC<AutomationRowProps> = ({
               }}
               aria-label="Edit"
               className="h-7 w-7 text-muted-foreground"
-              disabled={isTriggering}
             >
               <Pencil className="h-3.5 w-3.5" />
             </Button>
@@ -219,7 +204,6 @@ const AutomationRow: React.FC<AutomationRowProps> = ({
               }}
               aria-label="Delete"
               className="h-7 w-7 text-destructive/60"
-              disabled={isTriggering}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>

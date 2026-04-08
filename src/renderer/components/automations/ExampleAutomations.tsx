@@ -1,17 +1,4 @@
-import {
-  Bug,
-  CircuitBoard,
-  FileText,
-  Gauge,
-  GitMerge,
-  Headphones,
-  MessageSquare,
-  Plus,
-  Search,
-  Shield,
-  SlidersHorizontal,
-  Ticket,
-} from 'lucide-react';
+import { Bug, FileText, Gauge, Plus, Search, Shield, SlidersHorizontal } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import type { AutomationMode, TriggerType } from '@shared/automations/types';
 import forgejoSvg from '../../../assets/images/Forgejo.svg?raw';

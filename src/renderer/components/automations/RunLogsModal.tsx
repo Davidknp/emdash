@@ -1,5 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, Clock, Loader2, Timer, XCircle } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import type { Automation, AutomationRunLog } from '@shared/automations/types';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Separator } from '../ui/separator';
@@ -35,20 +36,16 @@ const statusBadge = (status: AutomationRunLog['status']) => {
 };
 
 const RunLogsModal: React.FC<RunLogsModalProps> = ({ isOpen, onClose, automation, getRunLogs }) => {
-  const [logs, setLogs] = useState<AutomationRunLog[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (isOpen && automation) {
-      setIsLoading(true);
-      setError(null);
-      getRunLogs(automation.id, 50)
-        .then(setLogs)
-        .catch((err) => setError(err?.message ?? 'Failed to load run history'))
-        .finally(() => setIsLoading(false));
-    }
-  }, [isOpen, automation, getRunLogs]);
+  const {
+    data: logs = [],
+    isLoading,
+    error,
+  } = useQuery<AutomationRunLog[]>({
+    queryKey: ['automations', 'run-logs', automation?.id],
+    queryFn: () => getRunLogs(automation!.id, 50),
+    enabled: isOpen && !!automation,
+  });
+  const errorMessage = error instanceof Error ? error.message : null;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -74,9 +71,9 @@ const RunLogsModal: React.FC<RunLogsModalProps> = ({ isOpen, onClose, automation
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
-        ) : error ? (
+        ) : errorMessage ? (
           <div className="py-8 text-center">
-            <p className="text-xs text-red-500">{error}</p>
+            <p className="text-xs text-red-500">{errorMessage}</p>
           </div>
         ) : logs.length === 0 ? (
           <div className="py-8 text-center">

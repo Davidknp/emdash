@@ -1,13 +1,18 @@
-import { eq } from 'drizzle-orm';
 import type { CreateAutomationInput, UpdateAutomationInput } from '@shared/automations/types';
 import { createRPCController } from '@shared/ipc/rpc';
 import { db } from '@main/db/client';
-import { projects } from '@main/db/schema';
 import { log } from '@main/lib/logger';
 import { automationsService } from './automations-service';
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function resolveProjectName(projectId: string): Promise<string | null> {
+  const project = await db.query.projects.findFirst({
+    where: (p, { eq }) => eq(p.id, projectId),
+  });
+  return project?.name ?? null;
 }
 
 export async function startAutomationsRuntime(): Promise<void> {
@@ -42,12 +47,11 @@ export const automationsController = createRPCController({
 
   create: async (input: CreateAutomationInput) => {
     try {
-      const project = await db.query.projects.findFirst({
-        where: (p, { eq }) => eq(p.id, input.projectId),
-      });
-      if (!project) return { success: false, error: `Unknown projectId: ${input.projectId}` };
+      const projectName = await resolveProjectName(input.projectId);
+      if (projectName === null)
+        return { success: false, error: `Unknown projectId: ${input.projectId}` };
 
-      const created = await automationsService.create({ ...input, projectName: project.name });
+      const created = await automationsService.create({ ...input, projectName });
       return { success: true, data: created };
     } catch (error) {
       return { success: false, error: formatError(error) };
@@ -58,13 +62,10 @@ export const automationsController = createRPCController({
     try {
       let projectName = input.projectName;
       if (input.projectId) {
-        const project = await db
-          .select({ name: projects.name })
-          .from(projects)
-          .where(eq(projects.id, input.projectId))
-          .limit(1);
-        if (!project[0]) return { success: false, error: `Unknown projectId: ${input.projectId}` };
-        projectName = project[0].name;
+        const resolved = await resolveProjectName(input.projectId);
+        if (resolved === null)
+          return { success: false, error: `Unknown projectId: ${input.projectId}` };
+        projectName = resolved;
       }
 
       const updated = await automationsService.update({ ...input, projectName });

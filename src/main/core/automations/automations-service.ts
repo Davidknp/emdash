@@ -18,7 +18,7 @@ import { linearService } from '@main/core/linear/LinearService';
 import { plainService } from '@main/core/plain/plain-service';
 import { prService } from '@main/core/pull-requests/pr-service';
 import { createTask } from '@main/core/tasks/createTask';
-import { db, sqlite } from '@main/db/client';
+import { db } from '@main/db/client';
 import { automationRunLogs, automations, projects } from '@main/db/schema';
 import { log } from '@main/lib/logger';
 
@@ -132,88 +132,20 @@ export class AutomationsService {
   private scheduleTimer: NodeJS.Timeout | null = null;
   private triggerTimer: NodeJS.Timeout | null = null;
   private started = false;
-  private initialized = false;
   private inFlight = new Set<string>();
   private seenEvents = new Map<string, Set<string>>();
 
-  private async ensureTables(): Promise<void> {
-    if (this.initialized) return;
-    sqlite.exec(`
-      CREATE TABLE IF NOT EXISTS automations (
-        id text PRIMARY KEY NOT NULL,
-        project_id text NOT NULL,
-        project_name text DEFAULT '' NOT NULL,
-        name text NOT NULL,
-        prompt text NOT NULL,
-        agent_id text NOT NULL,
-        mode text DEFAULT 'schedule' NOT NULL,
-        schedule text NOT NULL,
-        trigger_type text,
-        trigger_config text,
-        use_worktree integer DEFAULT 1 NOT NULL,
-        status text DEFAULT 'active' NOT NULL,
-        last_run_at text,
-        next_run_at text,
-        run_count integer DEFAULT 0 NOT NULL,
-        last_run_result text,
-        last_run_error text,
-        created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-      );
-      CREATE INDEX IF NOT EXISTS idx_automations_project_id ON automations (project_id);
-      CREATE INDEX IF NOT EXISTS idx_automations_status_next_run ON automations (status, next_run_at);
-
-      CREATE TABLE IF NOT EXISTS automation_run_logs (
-        id text PRIMARY KEY NOT NULL,
-        automation_id text NOT NULL,
-        started_at text NOT NULL,
-        finished_at text,
-        status text NOT NULL,
-        error text,
-        task_id text,
-        FOREIGN KEY (automation_id) REFERENCES automations(id) ON DELETE CASCADE,
-        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_automation_run_logs_automation_started ON automation_run_logs (automation_id, started_at);
-    `);
-
-    // Backfill schema for users with older local tables.
-    const hasColumn = (table: string, column: string): boolean => {
-      const rows = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-      return rows.some((r) => r.name === column);
-    };
-
-    const addColumnIfMissing = (table: string, column: string, ddl: string): void => {
-      if (!hasColumn(table, column)) {
-        sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
-      }
-    };
-
-    addColumnIfMissing('automations', 'mode', `mode text DEFAULT 'schedule' NOT NULL`);
-    addColumnIfMissing('automations', 'trigger_type', 'trigger_type text');
-    addColumnIfMissing('automations', 'trigger_config', 'trigger_config text');
-    addColumnIfMissing('automations', 'use_worktree', 'use_worktree integer DEFAULT 1 NOT NULL');
-    addColumnIfMissing('automations', 'last_run_result', 'last_run_result text');
-    addColumnIfMissing('automations', 'last_run_error', 'last_run_error text');
-
-    this.initialized = true;
-  }
-
   async list(): Promise<Automation[]> {
-    await this.ensureTables();
     const rows = await db.select().from(automations).orderBy(desc(automations.updatedAt));
     return rows.map(mapAutomation);
   }
 
   async get(id: string): Promise<Automation | null> {
-    await this.ensureTables();
     const rows = await db.select().from(automations).where(eq(automations.id, id)).limit(1);
     return rows[0] ? mapAutomation(rows[0]) : null;
   }
 
   async create(input: CreateAutomationInput): Promise<Automation> {
-    await this.ensureTables();
     const now = new Date().toISOString();
     const id = `auto_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
     const mode = input.mode ?? 'schedule';
@@ -249,13 +181,15 @@ export class AutomationsService {
   }
 
   async update(input: UpdateAutomationInput): Promise<Automation> {
-    await this.ensureTables();
     const existing = await this.get(input.id);
     if (!existing) throw new Error('Automation not found');
 
     const mode = input.mode ?? existing.mode;
     const schedule = input.schedule ?? existing.schedule;
     const nextRunAt = mode === 'schedule' ? computeNextRun(schedule) : null;
+    const triggerConfig =
+      input.triggerConfig === undefined ? existing.triggerConfig : input.triggerConfig;
+    const useWorktree = input.useWorktree === undefined ? existing.useWorktree : input.useWorktree;
 
     await db
       .update(automations)
@@ -269,23 +203,9 @@ export class AutomationsService {
         schedule: JSON.stringify(schedule),
         triggerType:
           input.triggerType === undefined ? existing.triggerType : (input.triggerType ?? null),
-        triggerConfig:
-          input.triggerConfig === undefined
-            ? existing.triggerConfig
-              ? JSON.stringify(existing.triggerConfig)
-              : null
-            : input.triggerConfig
-              ? JSON.stringify(input.triggerConfig)
-              : null,
+        triggerConfig: triggerConfig ? JSON.stringify(triggerConfig) : null,
         status: input.status ?? existing.status,
-        useWorktree:
-          input.useWorktree === undefined
-            ? existing.useWorktree
-              ? 1
-              : 0
-            : input.useWorktree
-              ? 1
-              : 0,
+        useWorktree: useWorktree ? 1 : 0,
         nextRunAt,
         updatedAt: new Date().toISOString(),
       })
@@ -297,7 +217,6 @@ export class AutomationsService {
   }
 
   async delete(id: string): Promise<boolean> {
-    await this.ensureTables();
     await db.delete(automations).where(eq(automations.id, id));
     this.seenEvents.delete(id);
     return true;
@@ -310,7 +229,6 @@ export class AutomationsService {
   }
 
   async getRunLogs(automationId: string, limit = 100): Promise<AutomationRunLog[]> {
-    await this.ensureTables();
     const rows = await db
       .select()
       .from(automationRunLogs)
@@ -324,7 +242,6 @@ export class AutomationsService {
     runId: string,
     update: Partial<Pick<AutomationRunLog, 'status' | 'error' | 'finishedAt' | 'taskId'>>
   ): Promise<void> {
-    await this.ensureTables();
     await db
       .update(automationRunLogs)
       .set({
@@ -376,7 +293,6 @@ export class AutomationsService {
   }
 
   async reconcileMissedRuns(): Promise<void> {
-    await this.ensureTables();
     const nowIso = new Date().toISOString();
     await db
       .update(automationRunLogs)
@@ -414,7 +330,6 @@ export class AutomationsService {
   }
 
   private async processScheduledAutomations(): Promise<void> {
-    await this.ensureTables();
     const now = new Date();
     const nowIso = now.toISOString();
     const due = await db
@@ -436,7 +351,6 @@ export class AutomationsService {
   }
 
   private async processTriggerAutomations(): Promise<void> {
-    await this.ensureTables();
     const rows = await db
       .select()
       .from(automations)
@@ -445,19 +359,19 @@ export class AutomationsService {
     for (const row of rows) {
       const automation = mapAutomation(row);
       const events = await this.fetchRawEvents(automation);
-      const seen = this.seenEvents.get(automation.id) ?? new Set<string>();
-      if (!this.seenEvents.has(automation.id)) this.seenEvents.set(automation.id, seen);
+      const seen = this.seenEvents.get(automation.id);
 
-      const fresh = events.filter(
-        (event) => !seen.has(event.id) && this.matchesConfig(automation, event)
-      );
+      const fresh = seen
+        ? events.filter((event) => !seen.has(event.id) && this.matchesConfig(automation, event))
+        : [];
       for (const event of fresh.slice(0, 3)) {
-        seen.add(event.id);
         if (!this.inFlight.has(automation.id)) {
           void this.runAutomation(automation, event);
         }
       }
-      for (const event of events) seen.add(event.id);
+      // Replace the seen set with only the current window — bounded by the
+      // upstream `fetchRawEvents` page size (~30) so memory can't grow unbounded.
+      this.seenEvents.set(automation.id, new Set(events.map((e) => e.id)));
     }
   }
 
@@ -646,7 +560,6 @@ export class AutomationsService {
       if (!isValidProviderId(automation.agentId))
         throw new Error(`Invalid agent: ${automation.agentId}`);
 
-      const remote = project.gitRemote ? 'origin' : 'origin';
       const baseBranch = project.baseRef || 'main';
       const branchBase = `${slug(automation.name)}-${new Date().toISOString().slice(0, 10)}`;
 
@@ -655,7 +568,7 @@ export class AutomationsService {
         id: taskId,
         projectId: automation.projectId,
         name: triggerEvent ? `${automation.name}: ${triggerEvent.title}` : automation.name,
-        sourceBranch: { branch: baseBranch, remote },
+        sourceBranch: { branch: baseBranch, remote: 'origin' },
         strategy: automation.useWorktree
           ? { kind: 'new-branch', taskBranch: branchBase }
           : { kind: 'no-worktree' },

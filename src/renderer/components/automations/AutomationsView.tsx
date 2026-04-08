@@ -23,7 +23,6 @@ import { Button } from '../ui/button';
 import { TooltipProvider } from '../ui/tooltip';
 import AutomationInlineCreate from './AutomationInlineCreate';
 import AutomationRow from './AutomationRow';
-import AutomationRunningTasks from './AutomationRunningTasks';
 import ExampleAutomations, { TemplatesDialog } from './ExampleAutomations';
 import RunLogsModal from './RunLogsModal';
 import { useAutomations } from './useAutomations';
@@ -34,7 +33,6 @@ const AutomationsView: React.FC = () => {
     isLoading,
     error,
     clearError,
-    refresh,
     create,
     update,
     remove,
@@ -154,53 +152,42 @@ const AutomationsView: React.FC = () => {
             </div>
           )}
 
-          {/* Inline Create */}
+          {/* Inline Create / Edit */}
           <AnimatePresence>
-            {showCreate && (
+            {(showCreate || editingAutomation) && (
               <motion.div
+                key={editingAutomation ? `edit-${editingAutomation.id}` : 'create'}
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
                 className="overflow-hidden"
               >
-                <AutomationInlineCreate
-                  projects={projects}
-                  prefill={prefill}
-                  onSave={async (input) => {
-                    const result = await create(input);
-                    if (result) {
+                {editingAutomation ? (
+                  <AutomationInlineCreate
+                    projects={projects}
+                    editingAutomation={editingAutomation}
+                    onSave={async () => {}}
+                    onUpdate={handleUpdate}
+                    onCancel={() => setEditingAutomation(null)}
+                  />
+                ) : (
+                  <AutomationInlineCreate
+                    projects={projects}
+                    prefill={prefill}
+                    onSave={async (input) => {
+                      const result = await create(input);
+                      if (result) {
+                        setShowCreate(false);
+                        setPrefill(null);
+                      }
+                    }}
+                    onCancel={() => {
                       setShowCreate(false);
                       setPrefill(null);
-                    }
-                  }}
-                  onCancel={() => {
-                    setShowCreate(false);
-                    setPrefill(null);
-                  }}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Inline Edit */}
-          <AnimatePresence>
-            {editingAutomation && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                className="overflow-hidden"
-              >
-                <AutomationInlineCreate
-                  key={editingAutomation.id}
-                  projects={projects}
-                  editingAutomation={editingAutomation}
-                  onSave={async () => {}}
-                  onUpdate={handleUpdate}
-                  onCancel={() => setEditingAutomation(null)}
-                />
+                    }}
+                  />
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -255,9 +242,6 @@ const AutomationsView: React.FC = () => {
               </div>
             </div>
           )}
-
-          {/* Automation tasks (runs) — below active/paused */}
-          <AutomationRunningTasks />
         </div>
 
         {/* Browse Templates Dialog */}

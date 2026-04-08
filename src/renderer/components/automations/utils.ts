@@ -83,16 +83,6 @@ export const DAYS_OF_WEEK: { value: DayOfWeek; label: string }[] = (
   ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
 ).map((value) => ({ value, label: DAY_LABELS[value] }));
 
-export const HOURS = Array.from({ length: 24 }, (_, i) => ({
-  value: i,
-  label: pad2(i),
-}));
-
-export const MINUTES = Array.from({ length: 60 }, (_, i) => ({
-  value: i,
-  label: pad2(i),
-}));
-
 export const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, i) => ({
   value: i + 1,
   label: ordinal(i + 1),

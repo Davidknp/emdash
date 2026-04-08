@@ -20,12 +20,9 @@ import type {
   UpdateAutomationInput,
 } from '@shared/automations/types';
 import { INTEGRATION_LABELS } from '@shared/integrations/types';
-import { agentConfig } from '@renderer/lib/agentConfig';
 import { useIntegrationStatusMap } from '../../hooks/useIntegrationStatusMap';
-import type { Agent } from '../../types';
 import type { Project } from '../../types/app';
 import { AgentSelector } from '../agent-selector';
-import AgentLogo from '../AgentLogo';
 import { Button } from '../ui/button';
 import {
   DropdownMenu,
@@ -42,8 +39,6 @@ import {
   DAYS_OF_WEEK,
   formatScheduleLabel,
   formatTriggerLabel,
-  HOURS,
-  MINUTES,
   SCHEDULE_TYPES,
   TRIGGER_INTEGRATION_MAP,
   TRIGGER_TYPES,
@@ -104,24 +99,7 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const nameRef = useRef<HTMLInputElement>(null);
-  const initializedRef = useRef(false);
   const userTouchedWorktreeRef = useRef(false);
-
-  useEffect(() => {
-    if (prefill && !isEditing && !initializedRef.current) {
-      setName(prefill.name);
-      setPrompt(prefill.prompt);
-      if (prefill.mode) setMode(prefill.mode);
-      if (prefill.triggerType) setTriggerType(prefill.triggerType);
-      initializedRef.current = true;
-    }
-  }, [prefill, isEditing]);
-
-  useEffect(() => {
-    return () => {
-      initializedRef.current = false;
-    };
-  }, []);
 
   useEffect(() => {
     nameRef.current?.focus();
@@ -218,7 +196,6 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
   };
 
   const selectedProject = projects.find((p) => p.id === projectId);
-  const selectedAgent = agentConfig[agentId as Agent];
   const hasGithub =
     selectedProject?.githubInfo?.connected && selectedProject?.githubInfo?.repository;
 

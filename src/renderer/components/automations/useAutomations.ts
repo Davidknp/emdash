@@ -1,125 +1,139 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
 import type {
   Automation,
   AutomationRunLog,
   CreateAutomationInput,
   UpdateAutomationInput,
 } from '@shared/automations/types';
+import { rpc } from '@renderer/core/ipc';
 
-/** Auto-refresh interval for the automations list (ms) */
+const AUTOMATIONS_KEY = ['automations', 'list'] as const;
 const REFRESH_INTERVAL = 30_000;
 
+function unwrap<T>(result: { success: boolean; data?: T; error?: string }, fallback: string): T {
+  if (result.success && result.data !== undefined) return result.data;
+  throw new Error(result.error ?? fallback);
+}
+
+function messageOf(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
+}
+
 export function useAutomations() {
-  const [automations, setAutomations] = useState<Automation[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const result = await window.electronAPI.automationsList();
-      if (result.success && result.data) {
-        setAutomations(result.data);
-        setError(null);
-      } else {
-        setError(result.error ?? 'Failed to load automations');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load automations');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const query = useQuery<Automation[]>({
+    queryKey: AUTOMATIONS_KEY,
+    queryFn: async () => unwrap(await rpc.automations.list(), 'Failed to load automations'),
+    refetchInterval: REFRESH_INTERVAL,
+  });
 
-  // Initial load + auto-refresh every 30s so nextRunAt / lastRunAt stay fresh
-  useEffect(() => {
-    void load();
-    refreshTimer.current = setInterval(() => void load(), REFRESH_INTERVAL);
-    return () => {
-      if (refreshTimer.current) clearInterval(refreshTimer.current);
-    };
-  }, [load]);
+  const invalidate = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: AUTOMATIONS_KEY }),
+    [queryClient]
+  );
+
+  const createMutation = useMutation({
+    mutationFn: async (input: CreateAutomationInput) =>
+      unwrap(await rpc.automations.create(input), 'Failed to create automation'),
+    onSuccess: () => invalidate(),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (input: UpdateAutomationInput) =>
+      unwrap(await rpc.automations.update(input), 'Failed to update automation'),
+    onSuccess: () => invalidate(),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await rpc.automations.delete(id), 'Failed to delete automation'),
+    onSuccess: () => invalidate(),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await rpc.automations.toggle(id), 'Failed to toggle automation'),
+    onSuccess: () => invalidate(),
+  });
+
+  const triggerNowMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const result = await rpc.automations.triggerNow(id);
+      if (!result.success) throw new Error(result.error ?? 'Failed to trigger automation');
+    },
+    onSuccess: () => invalidate(),
+  });
 
   const create = useCallback(
     async (input: CreateAutomationInput): Promise<Automation | null> => {
       try {
-        const result = await window.electronAPI.automationsCreate(input);
-        if (result.success && result.data) {
-          await load();
-          return result.data;
-        }
-        setError(result.error ?? 'Failed to create automation');
-        return null;
+        return await createMutation.mutateAsync(input);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to create automation');
+        setError(messageOf(err, 'Failed to create automation'));
         return null;
       }
     },
-    [load]
+    [createMutation]
   );
 
   const update = useCallback(
     async (input: UpdateAutomationInput): Promise<Automation | null> => {
       try {
-        const result = await window.electronAPI.automationsUpdate(input);
-        if (result.success && result.data) {
-          await load();
-          return result.data;
-        }
-        setError(result.error ?? 'Failed to update automation');
-        return null;
+        return await updateMutation.mutateAsync(input);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to update automation');
+        setError(messageOf(err, 'Failed to update automation'));
         return null;
       }
     },
-    [load]
+    [updateMutation]
   );
 
   const remove = useCallback(
     async (id: string): Promise<boolean> => {
       try {
-        const result = await window.electronAPI.automationsDelete({ id });
-        if (result.success) {
-          await load();
-          return true;
-        }
-        setError(result.error ?? 'Failed to delete automation');
-        return false;
+        await deleteMutation.mutateAsync(id);
+        return true;
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to delete automation');
+        setError(messageOf(err, 'Failed to delete automation'));
         return false;
       }
     },
-    [load]
+    [deleteMutation]
   );
 
   const toggle = useCallback(
     async (id: string): Promise<Automation | null> => {
       try {
-        const result = await window.electronAPI.automationsToggle({ id });
-        if (result.success && result.data) {
-          await load();
-          return result.data;
-        }
-        setError(result.error ?? 'Failed to toggle automation');
-        return null;
+        return await toggleMutation.mutateAsync(id);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to toggle automation');
+        setError(messageOf(err, 'Failed to toggle automation'));
         return null;
       }
     },
-    [load]
+    [toggleMutation]
+  );
+
+  const triggerNow = useCallback(
+    async (id: string): Promise<boolean> => {
+      try {
+        await triggerNowMutation.mutateAsync(id);
+        return true;
+      } catch (err) {
+        console.error('Failed to trigger automation:', err);
+        return false;
+      }
+    },
+    [triggerNowMutation]
   );
 
   const getRunLogs = useCallback(
     async (automationId: string, limit?: number): Promise<AutomationRunLog[]> => {
       try {
-        const result = await window.electronAPI.automationsRunLogs({ automationId, limit });
-        if (result.success && result.data) {
-          return result.data;
-        }
-        return [];
+        const result = await rpc.automations.runLogs(automationId, limit);
+        return result.success && result.data ? result.data : [];
       } catch (err) {
         console.error('Failed to fetch run logs:', err);
         return [];
@@ -128,31 +142,14 @@ export function useAutomations() {
     []
   );
 
-  const triggerNow = useCallback(
-    async (id: string): Promise<boolean> => {
-      try {
-        const result = await window.electronAPI.automationsTriggerNow({ id });
-        if (result.success) {
-          await load();
-          return true;
-        }
-        return false;
-      } catch (err) {
-        console.error('Failed to trigger automation:', err);
-        return false;
-      }
-    },
-    [load]
-  );
-
-  const clearError = useCallback(() => setError(null), []);
+  const queryError = query.error instanceof Error ? query.error.message : null;
 
   return {
-    automations,
-    isLoading,
-    error,
-    clearError,
-    refresh: load,
+    automations: query.data ?? [],
+    isLoading: query.isLoading,
+    error: error ?? queryError,
+    clearError: useCallback(() => setError(null), []),
+    refresh: invalidate,
     create,
     update,
     remove,
