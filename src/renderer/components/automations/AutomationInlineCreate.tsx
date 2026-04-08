@@ -239,7 +239,7 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
       </div>
 
       {/* Prompt textarea */}
-      <div className="px-4 pb-3">
+      <div className="px-4 pb-1">
         <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
@@ -255,9 +255,9 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
       )}
 
       {/* Bottom toolbar */}
-      <div className="bg-muted/10 pt-1">
+      <div className="bg-muted/10">
         {/* Config row — flat pills, hover only */}
-        <div className="flex flex-wrap items-center gap-0.5 px-2 pb-1 pt-2">
+        <div className="flex flex-wrap items-center gap-0.5 px-2 py-1">
           {/* Agent select — borderless to match flat row */}
           <AgentSelector
             value={agentId as AgentProviderId}
@@ -303,37 +303,61 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
 
           <span className="mx-1 h-3 w-px bg-border/60" aria-hidden />
 
-          {/* Combined When pill (Schedule | Trigger) */}
+          {/* When pill — single fixed-width pill, no shift */}
           <Popover>
-            <PopoverTrigger className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted/60">
-              {mode === 'trigger' ? <Zap className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
-              <span className="max-w-[180px] truncate">
-                {mode === 'trigger' ? formatTriggerLabel(triggerType) : schedulePreview}
-              </span>
+            <PopoverTrigger className="relative inline-flex h-7 w-auto items-center justify-center gap-1.5 overflow-hidden rounded-md px-2 text-xs text-muted-foreground hover:bg-muted/60">
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.span
+                  key={`${mode}-${mode === 'trigger' ? triggerType : schedulePreview}`}
+                  className="flex items-center justify-center gap-1.5"
+                  initial={{ y: 10, opacity: 0, filter: 'blur(2px)' }}
+                  animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ y: -10, opacity: 0, filter: 'blur(2px)' }}
+                  transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
+                >
+                  {mode === 'trigger' ? <Zap className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                  <span className="max-w-[160px] truncate">
+                    {mode === 'trigger' ? formatTriggerLabel(triggerType) : schedulePreview}
+                  </span>
+                </motion.span>
+              </AnimatePresence>
             </PopoverTrigger>
             <PopoverContent className="w-[280px] p-0" align="start">
-              {/* Mode segmented control */}
-              <div className="flex items-center gap-1 border-b border-border/40 p-1">
-                <button
-                  type="button"
-                  onClick={() => setMode('schedule')}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-xs ${mode === 'schedule' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60'}`}
-                >
-                  <Clock className="h-3 w-3" />
-                  Schedule
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode('trigger')}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-xs ${mode === 'trigger' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60'}`}
-                >
-                  <Zap className="h-3 w-3" />
-                  Trigger
-                </button>
+              {/* Mode swoosh toggle */}
+              <div className="p-1">
+                <div className="relative flex items-center rounded-md bg-muted/40 p-0.5">
+                  {(['schedule', 'trigger'] as const).map((m) => {
+                    const active = mode === m;
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMode(m)}
+                        className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-[4px] px-2 py-1 text-xs transition-colors ${active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                      >
+                        {active && (
+                          <motion.span
+                            layoutId="when-mode-pill"
+                            className="absolute inset-0 rounded-[4px] bg-background shadow-sm ring-1 ring-border"
+                            transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                          />
+                        )}
+                        <span className="relative z-10 flex items-center gap-1.5">
+                          {m === 'trigger' ? (
+                            <Zap className="h-3 w-3" />
+                          ) : (
+                            <Clock className="h-3 w-3" />
+                          )}
+                          {m === 'trigger' ? 'Trigger' : 'Schedule'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               {mode === 'trigger' && (
                 <>
-                  <div className="max-h-[240px] overflow-y-auto p-1">
+                  <div className="max-h-[240px] overflow-y-auto px-1 pb-1">
                     {TRIGGER_TYPES.map((t) => {
                       const connected = integrationStatuses[t.integration];
                       const active = triggerType === t.value;
@@ -395,9 +419,9 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
                 </>
               )}
               {mode === 'schedule' && (
-                <div className="space-y-2 p-2">
+                <div className="space-y-1.5 px-1.5 pb-1.5">
                   {/* Frequency as segmented buttons */}
-                  <div className="flex items-center gap-0.5 rounded-md border border-border bg-muted p-0.5 dark:bg-muted/40">
+                  <div className="flex items-center gap-0.5 rounded-md border border-border bg-muted/40 p-0.5">
                     {SCHEDULE_TYPES.map((s) => {
                       const active = scheduleType === s.value;
                       const shortLabel = s.value === 'hourly' ? 'Hourly' : s.label;
@@ -406,16 +430,23 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
                           key={s.value}
                           type="button"
                           onClick={() => setScheduleType(s.value as ScheduleType)}
-                          className={`flex-1 whitespace-nowrap rounded-[4px] px-2 py-1 text-xs transition-colors ${active ? 'bg-background text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'}`}
+                          className={`relative flex-1 whitespace-nowrap rounded-[4px] px-2 py-1 text-xs transition-colors ${active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                         >
-                          {shortLabel}
+                          {active && (
+                            <motion.span
+                              layoutId="schedule-active-pill"
+                              className="absolute inset-0 rounded-[4px] bg-background shadow-sm ring-1 ring-border"
+                              transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                            />
+                          )}
+                          <span className="relative z-10">{shortLabel}</span>
                         </button>
                       );
                     })}
                   </div>
 
                   {/* Time row */}
-                  <div className="flex items-center gap-2 px-1 pt-1">
+                  <div className="flex items-center gap-2">
                     {scheduleType === 'weekly' && (
                       <DropdownMenu>
                         <DropdownMenuTrigger className="inline-flex h-7 flex-1 items-center justify-between rounded-md border border-border bg-background px-2.5 text-xs hover:bg-muted/60">
@@ -477,7 +508,7 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
                         onChange={(e) =>
                           setMinute(Math.max(0, Math.min(59, Number(e.target.value) || 0)))
                         }
-                        className="h-7 w-[64px] text-center text-xs tabular-nums"
+                        className="!h-7 w-[64px] text-center text-xs tabular-nums"
                       />
                     ) : (
                       <Input
@@ -488,7 +519,7 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
                           setHour(Number(h) || 0);
                           setMinute(Number(m) || 0);
                         }}
-                        className="h-7 w-[90px] text-center text-xs tabular-nums [&::-webkit-calendar-picker-indicator]:hidden"
+                        className="!h-7 w-[90px] text-center text-xs tabular-nums [&::-webkit-calendar-picker-indicator]:hidden"
                       />
                     )}
                   </div>
@@ -506,7 +537,7 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
               userTouchedWorktreeRef.current = true;
               setUseWorktree(!useWorktree);
             }}
-            className="relative hidden h-7 w-[88px] items-center justify-center overflow-hidden rounded-md px-2 text-xs text-muted-foreground hover:bg-muted/60 md:inline-flex"
+            className="relative hidden h-7 w-auto items-center justify-center overflow-hidden rounded-md px-2 text-xs text-muted-foreground hover:bg-muted/60 md:inline-flex"
           >
             <AnimatePresence mode="popLayout" initial={false}>
               <motion.span
