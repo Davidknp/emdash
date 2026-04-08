@@ -1,10 +1,6 @@
 import { AgentProviderId, getProvider } from '@shared/agent-provider-registry';
 import { providerOverrideSettings } from '@main/core/settings/provider-settings-service';
 
-function splitFlagArgs(flag: string): string[] {
-  return flag.split(' ').filter(Boolean);
-}
-
 export async function buildAgentCommand({
   providerId,
   autoApprove,
@@ -25,7 +21,7 @@ export async function buildAgentCommand({
   const args: string[] = [];
 
   if (isResuming && providerConfig?.resumeFlag) {
-    args.push(...splitFlagArgs(providerConfig.resumeFlag));
+    args.push(...providerConfig.resumeFlag.split(' '));
     if (providerConfig?.sessionIdFlag) {
       args.push(sessionId);
     }
@@ -33,10 +29,8 @@ export async function buildAgentCommand({
     args.push(providerConfig.sessionIdFlag, sessionId);
   }
 
-  if (providerId === 'claude') {
-    args.push('--permission-mode', autoApprove ? 'bypassPermissions' : 'default');
-  } else if (autoApprove && providerConfig?.autoApproveFlag) {
-    args.push(...splitFlagArgs(providerConfig.autoApproveFlag));
+  if (autoApprove && providerConfig?.autoApproveFlag) {
+    args.push(providerConfig.autoApproveFlag);
   }
 
   if (!isResuming && initialPrompt && !providerDef?.useKeystrokeInjection) {
