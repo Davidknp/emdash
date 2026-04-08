@@ -1,4 +1,13 @@
-import { Check, Clock, FolderGit2, FolderOpen, GitBranch, Github, Zap } from 'lucide-react';
+import {
+  Check,
+  Clock,
+  FolderGit2,
+  FolderOpen,
+  GitBranch,
+  Github,
+  MoreHorizontal,
+  Zap,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import React, { useEffect, useRef, useState } from 'react';
 import type { AgentProviderId } from '@shared/agent-provider-registry';
@@ -246,54 +255,21 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
       )}
 
       {/* Bottom toolbar */}
-      <div className="border-t border-border/40 bg-muted/20">
-        {/* Config row — wraps when space is tight */}
-        <div className="flex flex-wrap items-center gap-1 px-3 pb-1 pt-2">
-          {/* Worktree toggle */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={`relative h-7 w-[110px] overflow-hidden rounded-md border border-border px-2.5 text-xs text-muted-foreground hover:bg-muted/60 ${useWorktree ? 'bg-muted/60' : 'bg-background'}`}
-            onClick={() => {
-              userTouchedWorktreeRef.current = true;
-              setUseWorktree(!useWorktree);
-            }}
-          >
-            <AnimatePresence mode="popLayout" initial={false}>
-              <motion.span
-                key={useWorktree ? 'worktree' : 'main'}
-                className="flex items-center justify-center gap-1.5"
-                initial={{ y: 12, opacity: 0, filter: 'blur(2px)' }}
-                animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
-                exit={{ y: -12, opacity: 0, filter: 'blur(2px)' }}
-                transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
-              >
-                {useWorktree ? (
-                  <>
-                    <GitBranch className="h-3 w-3 shrink-0" />
-                    Worktree
-                  </>
-                ) : (
-                  <>
-                    <FolderOpen className="h-3 w-3 shrink-0" />
-                    Direct
-                  </>
-                )}
-              </motion.span>
-            </AnimatePresence>
-          </Button>
-
-          {/* Agent select — same combobox used in settings */}
+      <div className="bg-muted/10 pt-1">
+        {/* Config row — flat pills, hover only */}
+        <div className="flex flex-wrap items-center gap-0.5 px-2 pb-1 pt-2">
+          {/* Agent select — borderless to match flat row */}
           <AgentSelector
             value={agentId as AgentProviderId}
             onChange={(id) => setAgentId(id)}
-            className="w-[160px] [&_button]:!h-7 [&_button]:!min-h-7 [&_button]:!justify-center [&_button]:!py-0 [&_button]:!px-2.5 [&_button]:!text-xs [&_button_span]:!flex-none [&_button_span]:!text-center"
+            className="w-auto [&_button]:!h-7 [&_button]:!min-h-7 [&_button]:!w-auto [&_button]:!justify-center [&_button]:!gap-1.5 [&_button]:!rounded-md [&_button]:!border-0 [&_button]:!bg-transparent [&_button]:!px-2 [&_button]:!py-0 [&_button]:!text-xs [&_button]:!text-muted-foreground [&_button]:hover:!bg-muted/60 [&_button_span]:!flex-none [&_button_span]:!text-center"
           />
+
+          <span className="mx-1 h-3 w-px bg-border/60" aria-hidden />
 
           {/* Project dropdown */}
           <DropdownMenu>
-            <DropdownMenuTrigger className="inline-flex h-7 w-auto items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground hover:bg-muted/60">
+            <DropdownMenuTrigger className="inline-flex h-7 w-auto items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted/60">
               {hasGithub ? (
                 <Github className="h-3 w-3 shrink-0" />
               ) : (
@@ -325,275 +301,282 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Mode toggle */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={`relative h-7 w-[110px] overflow-hidden rounded-md border border-border px-2.5 text-xs text-muted-foreground hover:bg-muted/60 ${mode === 'trigger' ? 'bg-muted/60' : 'bg-background'}`}
-            onClick={() => setMode(mode === 'trigger' ? 'schedule' : 'trigger')}
-          >
-            <AnimatePresence mode="popLayout" initial={false}>
-              <motion.span
-                key={mode}
-                className="flex items-center justify-center gap-1.5"
-                initial={{ y: 12, opacity: 0, filter: 'blur(2px)' }}
-                animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
-                exit={{ y: -12, opacity: 0, filter: 'blur(2px)' }}
-                transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
-              >
-                {mode === 'trigger' ? (
-                  <>
-                    <Zap className="h-3 w-3 shrink-0" />
-                    Trigger
-                  </>
-                ) : (
-                  <>
-                    <Clock className="h-3 w-3 shrink-0" />
-                    Schedule
-                  </>
-                )}
-              </motion.span>
-            </AnimatePresence>
-          </Button>
+          <span className="mx-1 h-3 w-px bg-border/60" aria-hidden />
 
-          {/* Trigger config */}
-          {mode === 'trigger' && (
-            <Popover>
-              <PopoverTrigger className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground hover:bg-muted/60">
-                <Zap className="h-3 w-3" />
-                <span className="max-w-[160px] truncate">{formatTriggerLabel(triggerType)}</span>
-              </PopoverTrigger>
-              <PopoverContent className="w-[260px] p-0" align="start">
-                <div className="max-h-[240px] overflow-y-auto p-1">
-                  {TRIGGER_TYPES.map((t) => {
-                    const connected = integrationStatuses[t.integration];
-                    const active = triggerType === t.value;
-                    return (
-                      <button
-                        key={t.value}
-                        type="button"
-                        onClick={() => setTriggerType(t.value as TriggerType)}
-                        className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted/60 ${active ? 'bg-muted/60' : ''}`}
-                      >
-                        <Zap className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        <span className="flex-1 truncate">{t.label}</span>
-                        {!connected && (
-                          <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-px text-[9px] font-medium text-amber-600 dark:text-amber-400">
-                            <span className="h-1 w-1 rounded-full bg-amber-500" />
-                            Setup
-                          </span>
-                        )}
-                        {active && <Check className="h-3 w-3 shrink-0 text-muted-foreground" />}
-                      </button>
-                    );
-                  })}
-                </div>
-                {(!integrationStatuses[TRIGGER_INTEGRATION_MAP[triggerType]] ||
-                  triggerType === 'github_pr' ||
-                  triggerType === 'github_issue' ||
-                  triggerType === 'gitlab_issue' ||
-                  triggerType === 'gitlab_mr' ||
-                  triggerType === 'forgejo_issue') && (
-                  <div className="space-y-2 border-t border-border/40 p-2">
-                    {!integrationStatuses[TRIGGER_INTEGRATION_MAP[triggerType]] && (
-                      <p className="rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-600 dark:text-amber-400">
-                        Connect {INTEGRATION_LABELS[TRIGGER_INTEGRATION_MAP[triggerType]]} in
-                        Settings → Integrations.
-                      </p>
-                    )}
-                    {(triggerType === 'github_pr' ||
-                      triggerType === 'github_issue' ||
-                      triggerType === 'gitlab_issue' ||
-                      triggerType === 'gitlab_mr' ||
-                      triggerType === 'forgejo_issue') && (
-                      <div className="flex gap-2">
-                        <Input
-                          value={branchFilter}
-                          onChange={(e) => setBranchFilter(e.target.value)}
-                          placeholder="Branch filter"
-                          className="h-7 flex-1 text-xs"
-                        />
-                        <Input
-                          value={labelFilter}
-                          onChange={(e) => setLabelFilter(e.target.value)}
-                          placeholder="Labels"
-                          className="h-7 flex-1 text-xs"
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </PopoverContent>
-            </Popover>
-          )}
-
-          {/* Schedule (only in schedule mode) */}
-          {mode === 'schedule' && (
-            <Popover>
-              <PopoverTrigger className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground hover:bg-muted/60">
-                <Clock className="h-3 w-3" />
-                <span className="max-w-[140px] truncate">{schedulePreview}</span>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto min-w-[280px] p-3" align="start">
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex h-7 w-[110px] items-center justify-between rounded-md border border-border bg-background px-2.5 text-xs hover:bg-muted/60">
-                        <span className="truncate">
-                          {SCHEDULE_TYPES.find((s) => s.value === scheduleType)?.label}
-                        </span>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="min-w-[110px]">
-                        {SCHEDULE_TYPES.map((s) => (
-                          <DropdownMenuItem
-                            key={s.value}
-                            onClick={() => setScheduleType(s.value as ScheduleType)}
-                            className="text-xs"
-                          >
-                            <span className="flex-1">{s.label}</span>
-                            {scheduleType === s.value && (
-                              <Check className="h-3 w-3 text-muted-foreground" />
-                            )}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    {scheduleType === 'weekly' && (
-                      <>
-                        <span className="text-[10px] text-muted-foreground">on</span>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger className="inline-flex h-7 w-[100px] items-center justify-between rounded-md border border-border bg-background px-2.5 text-xs hover:bg-muted/60">
-                            <span className="truncate">
-                              {DAYS_OF_WEEK.find((d) => d.value === dayOfWeek)?.label}
+          {/* Combined When pill (Schedule | Trigger) */}
+          <Popover>
+            <PopoverTrigger className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted/60">
+              {mode === 'trigger' ? <Zap className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+              <span className="max-w-[180px] truncate">
+                {mode === 'trigger' ? formatTriggerLabel(triggerType) : schedulePreview}
+              </span>
+            </PopoverTrigger>
+            <PopoverContent className="w-[280px] p-0" align="start">
+              {/* Mode segmented control */}
+              <div className="flex items-center gap-1 border-b border-border/40 p-1">
+                <button
+                  type="button"
+                  onClick={() => setMode('schedule')}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-xs ${mode === 'schedule' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60'}`}
+                >
+                  <Clock className="h-3 w-3" />
+                  Schedule
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('trigger')}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-xs ${mode === 'trigger' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60'}`}
+                >
+                  <Zap className="h-3 w-3" />
+                  Trigger
+                </button>
+              </div>
+              {mode === 'trigger' && (
+                <>
+                  <div className="max-h-[240px] overflow-y-auto p-1">
+                    {TRIGGER_TYPES.map((t) => {
+                      const connected = integrationStatuses[t.integration];
+                      const active = triggerType === t.value;
+                      return (
+                        <button
+                          key={t.value}
+                          type="button"
+                          onClick={() => setTriggerType(t.value as TriggerType)}
+                          className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted/60 ${active ? 'bg-muted/60' : ''}`}
+                        >
+                          <Zap className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <span className="flex-1 truncate">{t.label}</span>
+                          {!connected && (
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-px text-[9px] font-medium text-amber-600 dark:text-amber-400">
+                              <span className="h-1 w-1 rounded-full bg-amber-500" />
+                              Setup
                             </span>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="min-w-[120px]">
-                            {DAYS_OF_WEEK.map((d) => (
-                              <DropdownMenuItem
-                                key={d.value}
-                                onClick={() => setDayOfWeek(d.value)}
-                                className="text-xs"
-                              >
-                                <span className="flex-1">{d.label}</span>
-                                {dayOfWeek === d.value && (
-                                  <Check className="h-3 w-3 text-muted-foreground" />
-                                )}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </>
+                          )}
+                          {active && <Check className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {(!integrationStatuses[TRIGGER_INTEGRATION_MAP[triggerType]] ||
+                    triggerType === 'github_pr' ||
+                    triggerType === 'github_issue' ||
+                    triggerType === 'gitlab_issue' ||
+                    triggerType === 'gitlab_mr' ||
+                    triggerType === 'forgejo_issue') && (
+                    <div className="space-y-2 border-t border-border/40 p-2">
+                      {!integrationStatuses[TRIGGER_INTEGRATION_MAP[triggerType]] && (
+                        <p className="rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-600 dark:text-amber-400">
+                          Connect {INTEGRATION_LABELS[TRIGGER_INTEGRATION_MAP[triggerType]]} in
+                          Settings → Integrations.
+                        </p>
+                      )}
+                      {(triggerType === 'github_pr' ||
+                        triggerType === 'github_issue' ||
+                        triggerType === 'gitlab_issue' ||
+                        triggerType === 'gitlab_mr' ||
+                        triggerType === 'forgejo_issue') && (
+                        <div className="flex gap-2">
+                          <Input
+                            value={branchFilter}
+                            onChange={(e) => setBranchFilter(e.target.value)}
+                            placeholder="Branch filter"
+                            className="h-7 flex-1 text-xs"
+                          />
+                          <Input
+                            value={labelFilter}
+                            onChange={(e) => setLabelFilter(e.target.value)}
+                            placeholder="Labels"
+                            className="h-7 flex-1 text-xs"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+              {mode === 'schedule' && (
+                <div className="space-y-2 p-2">
+                  {/* Frequency as segmented buttons */}
+                  <div className="flex items-center gap-0.5 rounded-md border border-border bg-muted p-0.5 dark:bg-muted/40">
+                    {SCHEDULE_TYPES.map((s) => {
+                      const active = scheduleType === s.value;
+                      const shortLabel = s.value === 'hourly' ? 'Hourly' : s.label;
+                      return (
+                        <button
+                          key={s.value}
+                          type="button"
+                          onClick={() => setScheduleType(s.value as ScheduleType)}
+                          className={`flex-1 whitespace-nowrap rounded-[4px] px-2 py-1 text-xs transition-colors ${active ? 'bg-background text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                          {shortLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Time row */}
+                  <div className="flex items-center gap-2 px-1 pt-1">
+                    {scheduleType === 'weekly' && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="inline-flex h-7 flex-1 items-center justify-between rounded-md border border-border bg-background px-2.5 text-xs hover:bg-muted/60">
+                          <span className="truncate">
+                            {DAYS_OF_WEEK.find((d) => d.value === dayOfWeek)?.label}
+                          </span>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="min-w-[120px]">
+                          {DAYS_OF_WEEK.map((d) => (
+                            <DropdownMenuItem
+                              key={d.value}
+                              onClick={() => setDayOfWeek(d.value)}
+                              className="text-xs"
+                            >
+                              <span className="flex-1">{d.label}</span>
+                              {dayOfWeek === d.value && (
+                                <Check className="h-3 w-3 text-muted-foreground" />
+                              )}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     )}
 
                     {scheduleType === 'monthly' && (
-                      <>
-                        <span className="text-[10px] text-muted-foreground">on the</span>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger className="inline-flex h-7 w-[70px] items-center justify-between rounded-md border border-border bg-background px-2.5 text-xs hover:bg-muted/60">
-                            <span className="truncate">
-                              {DAYS_OF_MONTH.find((d) => d.value === dayOfMonth)?.label}
-                            </span>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="max-h-[240px] min-w-[80px] overflow-y-auto">
-                            {DAYS_OF_MONTH.map((d) => (
-                              <DropdownMenuItem
-                                key={d.value}
-                                onClick={() => setDayOfMonth(d.value)}
-                                className="text-xs"
-                              >
-                                <span className="flex-1">{d.label}</span>
-                                {dayOfMonth === d.value && (
-                                  <Check className="h-3 w-3 text-muted-foreground" />
-                                )}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="inline-flex h-7 flex-1 items-center justify-between rounded-md border border-border bg-background px-2.5 text-xs hover:bg-muted/60">
+                          <span className="truncate">
+                            Day {DAYS_OF_MONTH.find((d) => d.value === dayOfMonth)?.label}
+                          </span>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="max-h-[240px] min-w-[100px] overflow-y-auto">
+                          {DAYS_OF_MONTH.map((d) => (
+                            <DropdownMenuItem
+                              key={d.value}
+                              onClick={() => setDayOfMonth(d.value)}
+                              className="text-xs"
+                            >
+                              <span className="flex-1">{d.label}</span>
+                              {dayOfMonth === d.value && (
+                                <Check className="h-3 w-3 text-muted-foreground" />
+                              )}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     )}
 
                     <span className="shrink-0 text-[10px] text-muted-foreground">
                       {scheduleType === 'hourly' ? 'at minute' : 'at'}
                     </span>
 
-                    {scheduleType !== 'hourly' && (
-                      <>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger className="inline-flex h-7 w-[64px] shrink-0 items-center justify-between rounded-md border border-border bg-background px-2.5 text-xs hover:bg-muted/60">
-                            <span className="truncate">
-                              {HOURS.find((h) => h.value === hour)?.label}
-                            </span>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="max-h-[240px] min-w-[72px] overflow-y-auto">
-                            {HOURS.map((h) => (
-                              <DropdownMenuItem
-                                key={h.value}
-                                onClick={() => setHour(h.value)}
-                                className="text-xs"
-                              >
-                                <span className="flex-1">{h.label}</span>
-                                {hour === h.value && (
-                                  <Check className="h-3 w-3 text-muted-foreground" />
-                                )}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">:</span>
-                      </>
+                    {scheduleType === 'hourly' ? (
+                      <Input
+                        type="number"
+                        min={0}
+                        max={59}
+                        value={minute}
+                        onChange={(e) =>
+                          setMinute(Math.max(0, Math.min(59, Number(e.target.value) || 0)))
+                        }
+                        className="h-7 w-[64px] text-center text-xs tabular-nums"
+                      />
+                    ) : (
+                      <Input
+                        type="time"
+                        value={`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`}
+                        onChange={(e) => {
+                          const [h, m] = e.target.value.split(':');
+                          setHour(Number(h) || 0);
+                          setMinute(Number(m) || 0);
+                        }}
+                        className="h-7 w-[90px] text-center text-xs tabular-nums [&::-webkit-calendar-picker-indicator]:hidden"
+                      />
                     )}
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex h-7 w-[64px] shrink-0 items-center justify-between rounded-md border border-border bg-background px-2.5 text-xs hover:bg-muted/60">
-                        <span className="truncate">
-                          {MINUTES.find((m) => m.value === minute)?.label}
-                        </span>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="max-h-[240px] min-w-[72px] overflow-y-auto">
-                        {MINUTES.map((m) => (
-                          <DropdownMenuItem
-                            key={m.value}
-                            onClick={() => setMinute(m.value)}
-                            className="text-xs"
-                          >
-                            <span className="flex-1">{m.label}</span>
-                            {minute === m.value && (
-                              <Check className="h-3 w-3 text-muted-foreground" />
-                            )}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
                   </div>
                 </div>
-              </PopoverContent>
-            </Popover>
-          )}
-        </div>
+              )}
+            </PopoverContent>
+          </Popover>
 
-        {/* Action row */}
-        <div className="flex items-center justify-end gap-1.5 px-3 pb-2 pt-1">
-          <Button
+          <span className="mx-1 hidden h-3 w-px bg-border/60 md:inline-block" aria-hidden />
+
+          {/* Worktree toggle — inline on wide, in overflow on narrow */}
+          <button
             type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-muted-foreground"
-            onClick={onCancel}
-            disabled={isSaving}
+            onClick={() => {
+              userTouchedWorktreeRef.current = true;
+              setUseWorktree(!useWorktree);
+            }}
+            className="relative hidden h-7 w-[88px] items-center justify-center overflow-hidden rounded-md px-2 text-xs text-muted-foreground hover:bg-muted/60 md:inline-flex"
           >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={handleSubmit}
-            disabled={isSaving}
-          >
-            {buttonLabel}
-          </Button>
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.span
+                key={useWorktree ? 'worktree' : 'direct'}
+                className="flex items-center justify-center gap-1.5"
+                initial={{ y: 12, opacity: 0, filter: 'blur(2px)' }}
+                animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
+                exit={{ y: -12, opacity: 0, filter: 'blur(2px)' }}
+                transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
+              >
+                {useWorktree ? (
+                  <>
+                    <GitBranch className="h-3 w-3" />
+                    Worktree
+                  </>
+                ) : (
+                  <>
+                    <FolderOpen className="h-3 w-3" />
+                    Direct
+                  </>
+                )}
+              </motion.span>
+            </AnimatePresence>
+          </button>
+
+          {/* Overflow menu (narrow only) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 md:hidden">
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="min-w-[180px]">
+              <DropdownMenuItem
+                onClick={() => {
+                  userTouchedWorktreeRef.current = true;
+                  setUseWorktree(!useWorktree);
+                }}
+                className="text-xs"
+              >
+                {useWorktree ? (
+                  <GitBranch className="h-3 w-3 text-muted-foreground" />
+                ) : (
+                  <FolderOpen className="h-3 w-3 text-muted-foreground" />
+                )}
+                <span className="flex-1">Use worktree</span>
+                {useWorktree && <Check className="h-3 w-3 text-muted-foreground" />}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground"
+              onClick={onCancel}
+              disabled={isSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={handleSubmit}
+              disabled={isSaving}
+            >
+              {buttonLabel}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
