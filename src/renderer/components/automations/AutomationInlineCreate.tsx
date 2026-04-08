@@ -322,7 +322,7 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
                 </motion.span>
               </AnimatePresence>
             </PopoverTrigger>
-            <PopoverContent className="w-[280px] p-0" align="start">
+            <PopoverContent className="w-[280px] gap-0 p-0" align="start">
               {/* Mode swoosh toggle */}
               <div className="p-1">
                 <div className="relative flex items-center rounded-md bg-muted/40 p-0.5">
@@ -357,29 +357,31 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
               </div>
               {mode === 'trigger' && (
                 <>
-                  <div className="max-h-[240px] overflow-y-auto px-1 pb-1">
-                    {TRIGGER_TYPES.map((t) => {
-                      const connected = integrationStatuses[t.integration];
-                      const active = triggerType === t.value;
-                      return (
-                        <button
-                          key={t.value}
-                          type="button"
-                          onClick={() => setTriggerType(t.value as TriggerType)}
-                          className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted/60 ${active ? 'bg-muted/60' : ''}`}
-                        >
-                          <Zap className="h-3 w-3 shrink-0 text-muted-foreground" />
-                          <span className="flex-1 truncate">{t.label}</span>
-                          {!connected && (
-                            <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-px text-[9px] font-medium text-amber-600 dark:text-amber-400">
-                              <span className="h-1 w-1 rounded-full bg-amber-500" />
-                              Setup
-                            </span>
-                          )}
-                          {active && <Check className="h-3 w-3 shrink-0 text-muted-foreground" />}
-                        </button>
-                      );
-                    })}
+                  <div className="relative">
+                    <div className="max-h-[240px] overflow-y-auto px-1 pb-1">
+                      {TRIGGER_TYPES.map((t) => {
+                        const connected = integrationStatuses[t.integration];
+                        const active = triggerType === t.value;
+                        return (
+                          <button
+                            key={t.value}
+                            type="button"
+                            onClick={() => setTriggerType(t.value as TriggerType)}
+                            className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted/60 ${active ? 'bg-muted/60' : ''}`}
+                          >
+                            <Zap className="h-3 w-3 shrink-0 text-muted-foreground" />
+                            <span className="flex-1 truncate">{t.label}</span>
+                            {!connected && (
+                              <span className="shrink-0 text-[10px] text-muted-foreground/70">
+                                Not connected
+                              </span>
+                            )}
+                            {active && <Check className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-background to-transparent" />
                   </div>
                   {(!integrationStatuses[TRIGGER_INTEGRATION_MAP[triggerType]] ||
                     triggerType === 'github_pr' ||
