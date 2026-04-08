@@ -10,16 +10,19 @@ import type {
   TriggerType,
   UpdateAutomationInput,
 } from '@shared/automations/types';
+import { taskCreatedExternallyChannel } from '@shared/events/appEvents';
 import { forgejoService } from '@main/core/forgejo/forgejo-service';
 import { issueService } from '@main/core/github/services/issue-service';
 import { gitlabService } from '@main/core/gitlab/gitlab-service';
 import JiraService from '@main/core/jira/JiraService';
 import { linearService } from '@main/core/linear/LinearService';
 import { plainService } from '@main/core/plain/plain-service';
+import { projectManager } from '@main/core/projects/project-manager';
 import { prService } from '@main/core/pull-requests/pr-service';
 import { createTask } from '@main/core/tasks/createTask';
 import { db } from '@main/db/client';
 import { automationRunLogs, automations, projects } from '@main/db/schema';
+import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 
 type RawEvent = {
@@ -29,6 +32,7 @@ type RawEvent = {
   labels?: string[];
   assignee?: string;
   branch?: string;
+  createdAt?: string;
 };
 
 const DAY_ORDER: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -312,13 +316,15 @@ export class AutomationsService {
       void this.processTriggerAutomations().catch((error) => {
         log.error('[Automations] Trigger cycle failed:', error);
       });
-    }, 60_000);
+    }, 10_000);
     void this.processScheduledAutomations().catch((error) => {
       log.error('[Automations] Initial scheduled cycle failed:', error);
     });
-    void this.processTriggerAutomations().catch((error) => {
-      log.error('[Automations] Initial trigger cycle failed:', error);
-    });
+    setTimeout(() => {
+      void this.processTriggerAutomations().catch((error) => {
+        log.error('[Automations] Initial trigger cycle failed:', error);
+      });
+    }, 2_000);
   }
 
   stop(): void {
@@ -356,14 +362,54 @@ export class AutomationsService {
       .from(automations)
       .where(and(eq(automations.status, 'active'), eq(automations.mode, 'trigger')));
 
+    // Per-cycle dedup: multiple automations on the same source (e.g. several
+    // GitHub Issue Triages on the same repo) share a single upstream fetch.
+    const fetchCache = new Map<string, Promise<RawEvent[]>>();
+    const cacheKey = (automation: Automation) =>
+      `${automation.triggerType ?? 'none'}:${automation.projectId}`;
+
     for (const row of rows) {
       const automation = mapAutomation(row);
-      const events = await this.fetchRawEvents(automation);
-      const seen = this.seenEvents.get(automation.id);
+      const key = cacheKey(automation);
+      let pending = fetchCache.get(key);
+      if (!pending) {
+        pending = this.fetchRawEvents(automation);
+        fetchCache.set(key, pending);
+      }
+      const events = await pending;
 
-      const fresh = seen
-        ? events.filter((event) => !seen.has(event.id) && this.matchesConfig(automation, event))
-        : [];
+      // Don't wipe seen state on transient empty fetches (auth blip, rate limit,
+      // network error). An empty result set is treated as "no signal", not "no
+      // events exist". Without this guard, the next successful fetch would
+      // re-fire every existing event.
+      if (events.length === 0) {
+        if (!this.seenEvents.has(automation.id)) {
+          this.seenEvents.set(automation.id, new Set());
+        }
+        continue;
+      }
+
+      const seen = this.seenEvents.get(automation.id) ?? new Set<string>();
+      const isFirstObservation = !this.seenEvents.has(automation.id);
+      // Baseline timestamp: anything strictly newer than the automation's
+      // creation time is a candidate, even on the first poll after restart.
+      // This closes the gap where new events arriving between app start and
+      // the first poll would otherwise be silently absorbed into `seen`.
+      const baseline = Date.parse(automation.createdAt);
+
+      const fresh = events.filter((event) => {
+        if (seen.has(event.id)) return false;
+        if (isFirstObservation) {
+          // On the very first observation for this automation in this process,
+          // only fire events whose createdAt is after the automation itself.
+          // If we have no timestamp, fall back to NOT firing to avoid spam.
+          if (!event.createdAt) return false;
+          const ts = Date.parse(event.createdAt);
+          if (!Number.isFinite(ts) || ts <= baseline) return false;
+        }
+        return this.matchesConfig(automation, event);
+      });
+
       for (const event of fresh.slice(0, 3)) {
         if (!this.inFlight.has(automation.id)) {
           void this.runAutomation(automation, event);
@@ -407,6 +453,43 @@ export class AutomationsService {
     return true;
   }
 
+  private async resolveGitRemoteUrl(projectId: string): Promise<string | null> {
+    try {
+      let provider = projectManager.getProject(projectId);
+      if (!provider) {
+        // Provider may not be initialized yet (the trigger poll fires 2s after
+        // startup, but project bootstrap can take longer). Open it on demand.
+        try {
+          await projectManager.openProjectById(projectId);
+        } catch (openErr) {
+          log.error(
+            `[Automations] Could not open project ${projectId} to resolve remote:`,
+            openErr
+          );
+          return null;
+        }
+        provider = projectManager.getProject(projectId);
+        if (!provider) {
+          log.error(
+            `[Automations] Project ${projectId} provider unavailable after openProjectById`
+          );
+          return null;
+        }
+      }
+      const state = await provider.getRemoteState();
+      if (!state.selectedRemoteUrl) {
+        log.error(
+          `[Automations] Project ${projectId} has no selected remote URL (hasRemote=${state.hasRemote})`
+        );
+        return null;
+      }
+      return state.selectedRemoteUrl;
+    } catch (error) {
+      log.error(`[Automations] Failed to resolve remote for project ${projectId}:`, error);
+      return null;
+    }
+  }
+
   private async fetchRawEvents(automation: Automation): Promise<RawEvent[]> {
     if (!automation.triggerType) return [];
 
@@ -416,10 +499,14 @@ export class AutomationsService {
     if (!project) return [];
 
     switch (automation.triggerType) {
-      case 'github_issue':
-        return this.fetchGitHubIssues(project.gitRemote);
-      case 'github_pr':
-        return this.fetchGitHubPullRequests(project.id, project.gitRemote);
+      case 'github_issue': {
+        const remoteUrl = await this.resolveGitRemoteUrl(project.id);
+        return this.fetchGitHubIssues(remoteUrl);
+      }
+      case 'github_pr': {
+        const remoteUrl = await this.resolveGitRemoteUrl(project.id);
+        return this.fetchGitHubPullRequests(project.id, remoteUrl);
+      }
       case 'linear_issue':
         return this.fetchLinearIssues();
       case 'jira_issue':
@@ -449,6 +536,7 @@ export class AutomationsService {
       url: issue.url,
       labels: issue.labels.map((l) => l.name),
       assignee: issue.assignees[0]?.login,
+      createdAt: issue.createdAt ?? undefined,
     }));
   }
 
@@ -591,6 +679,11 @@ export class AutomationsService {
       await this.updateRunLog(runId, {
         status: 'success',
         finishedAt: new Date().toISOString(),
+        taskId: taskResult.data.id,
+      });
+
+      events.emit(taskCreatedExternallyChannel, {
+        projectId: automation.projectId,
         taskId: taskResult.data.id,
       });
 

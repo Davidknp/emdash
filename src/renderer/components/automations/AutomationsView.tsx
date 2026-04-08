@@ -24,22 +24,11 @@ import { TooltipProvider } from '../ui/tooltip';
 import AutomationInlineCreate from './AutomationInlineCreate';
 import AutomationRow from './AutomationRow';
 import ExampleAutomations, { TemplatesDialog } from './ExampleAutomations';
-import RunLogsModal from './RunLogsModal';
 import { useAutomations } from './useAutomations';
 
 const AutomationsView: React.FC = () => {
-  const {
-    automations,
-    isLoading,
-    error,
-    clearError,
-    create,
-    update,
-    remove,
-    toggle,
-    getRunLogs,
-    triggerNow,
-  } = useAutomations();
+  const { automations, isLoading, error, clearError, create, update, remove, toggle, triggerNow } =
+    useAutomations();
 
   const { projects } = useProjectManagementContext();
   const { statuses: integrationStatuses } = useIntegrationStatusMap();
@@ -47,7 +36,6 @@ const AutomationsView: React.FC = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [logsAutomation, setLogsAutomation] = useState<Automation | null>(null);
   const [prefill, setPrefill] = useState<{
     name: string;
     prompt: string;
@@ -212,7 +200,6 @@ const AutomationsView: React.FC = () => {
                     onToggle={toggle}
                     onDelete={setDeleteTarget}
                     onTriggerNow={triggerNow}
-                    onViewLogs={setLogsAutomation}
                   />
                 ))}
               </div>
@@ -236,7 +223,6 @@ const AutomationsView: React.FC = () => {
                     onToggle={toggle}
                     onDelete={setDeleteTarget}
                     onTriggerNow={triggerNow}
-                    onViewLogs={setLogsAutomation}
                   />
                 ))}
               </div>
@@ -251,14 +237,6 @@ const AutomationsView: React.FC = () => {
           onSelect={(name, prompt, mode, triggerType) => {
             handleExampleClick(name, prompt, mode, triggerType);
           }}
-        />
-
-        {/* Run Logs Modal */}
-        <RunLogsModal
-          isOpen={!!logsAutomation}
-          onClose={() => setLogsAutomation(null)}
-          automation={logsAutomation}
-          getRunLogs={getRunLogs}
         />
 
         {/* Delete Confirmation */}

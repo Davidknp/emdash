@@ -11,6 +11,23 @@ export interface SpawnParams {
 }
 
 /**
+ * POSIX shell single-quote escape. Wraps the value in single quotes and
+ * escapes any embedded single quotes via the standard `'\''` trick. Safe to
+ * pass as a token to `sh -c`.
+ */
+function shellQuote(value: string): string {
+  if (value === '') return "''";
+  // If the value is "safe" (alphanumerics + a few harmless chars) we can leave
+  // it bare; this keeps existing test fixtures and command lines readable.
+  if (/^[A-Za-z0-9_\-./:=@%+,]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function joinShellCommand(parts: string[]): string {
+  return parts.map(shellQuote).join(' ');
+}
+
+/**
  * Derive the executable, arguments, and working directory from a session config.
  * Applies shellSetup and tmux wrapping where relevant.
  */
@@ -20,7 +37,7 @@ export function resolveSpawnParams(type: SessionType, config: SessionConfig): Sp
   switch (type) {
     case 'agent': {
       const cfg = config as AgentSessionConfig;
-      const baseCmd = [cfg.command, ...cfg.args].join(' ');
+      const baseCmd = joinShellCommand([cfg.command, ...cfg.args]);
       const fullCmd = cfg.shellSetup ? `${cfg.shellSetup} && ${baseCmd}` : baseCmd;
 
       if (cfg.tmuxSessionName) {
@@ -37,7 +54,7 @@ export function resolveSpawnParams(type: SessionType, config: SessionConfig): Sp
     case 'general': {
       const cfg = config as GeneralSessionConfig;
       const baseCmd = cfg.command
-        ? [cfg.command, ...(cfg.args ?? [])].join(' ')
+        ? joinShellCommand([cfg.command, ...(cfg.args ?? [])])
         : `exec ${shell} -il`;
       const fullCmd = cfg.shellSetup ? `${cfg.shellSetup} && ${baseCmd}` : baseCmd;
 
@@ -98,7 +115,8 @@ export function resolveSshCommand(
   const { command, args, cwd } = resolveSpawnParams(type, config);
   const shell = process.env.SHELL ?? '/bin/sh';
 
-  const innerCmd = command === shell && args[0] === '-c' ? args[1] : [command, ...args].join(' ');
+  const innerCmd =
+    command === shell && args[0] === '-c' ? args[1] : joinShellCommand([command, ...args]);
   const envPrefix = envVars ? buildSshEnvPrefix(envVars) : '';
 
   return `cd ${JSON.stringify(cwd)} && ${envPrefix}${innerCmd}`;

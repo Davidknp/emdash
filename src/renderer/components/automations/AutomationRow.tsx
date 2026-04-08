@@ -12,6 +12,13 @@ import {
 import React from 'react';
 import type { Automation } from '@shared/automations/types';
 import { INTEGRATION_LABELS, type IntegrationStatusMap } from '@shared/integrations/types';
+import forgejoSvg from '../../../assets/images/Forgejo.svg?raw';
+import githubPng from '../../../assets/images/github.png';
+import gitlabSvg from '../../../assets/images/GitLab.svg?raw';
+import jiraSvg from '../../../assets/images/Jira.svg?raw';
+import linearSvg from '../../../assets/images/Linear.svg?raw';
+import plainSvg from '../../../assets/images/Plain.svg?raw';
+import sentrySvg from '../../../assets/images/Sentry.svg?raw';
 import { agentConfig } from '../../lib/agentConfig';
 import type { Agent } from '../../types';
 import type { Project } from '../../types/app';
@@ -33,7 +40,34 @@ interface AutomationRowProps {
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onTriggerNow: (id: string) => void;
-  onViewLogs: (automation: Automation) => void;
+}
+
+function IntegrationBadge({ integration }: { integration: string }): React.ReactNode {
+  const wrapper =
+    'pointer-events-none absolute -bottom-1 -right-1 flex h-3 w-3 items-center justify-center rounded-[3px] bg-background ring-1 ring-border';
+  if (integration === 'github') {
+    return (
+      <span className={wrapper}>
+        <img src={githubPng} alt="" className="h-2.5 w-2.5 dark:invert" />
+      </span>
+    );
+  }
+  const rawMap: Record<string, string> = {
+    linear: linearSvg,
+    jira: jiraSvg,
+    gitlab: gitlabSvg,
+    forgejo: forgejoSvg,
+    plain: plainSvg,
+    sentry: sentrySvg,
+  };
+  const raw = rawMap[integration];
+  if (!raw) return null;
+  return (
+    <span
+      className={`${wrapper} [&_svg]:h-2.5 [&_svg]:w-2.5`}
+      dangerouslySetInnerHTML={{ __html: raw }}
+    />
+  );
 }
 
 function getTriggerIcon(triggerType: string): React.ReactNode {
@@ -51,7 +85,6 @@ const AutomationRow: React.FC<AutomationRowProps> = ({
   onToggle,
   onDelete,
   onTriggerNow,
-  onViewLogs,
 }) => {
   const agent = agentConfig[automation.agentId as Agent];
   const project = projects.find((p) => p.id === automation.projectId);
@@ -74,13 +107,16 @@ const AutomationRow: React.FC<AutomationRowProps> = ({
         !isActive ? 'opacity-45' : ''
       }`}
     >
-      {agent?.logo ? (
-        <AgentLogo provider={automation.agentId as Agent} className="h-5 w-5 shrink-0 rounded-sm" />
-      ) : (
-        <span className="w-5 shrink-0 text-center text-[10px] font-semibold text-muted-foreground">
-          {automation.agentId.slice(0, 2).toUpperCase()}
-        </span>
-      )}
+      <div className="relative shrink-0">
+        {agent?.logo ? (
+          <AgentLogo provider={automation.agentId as Agent} className="h-5 w-5 rounded-sm" />
+        ) : (
+          <span className="block w-5 text-center text-[10px] font-semibold text-muted-foreground">
+            {automation.agentId.slice(0, 2).toUpperCase()}
+          </span>
+        )}
+        {requiredIntegration && <IntegrationBadge integration={requiredIntegration} />}
+      </div>
 
       <div className="min-w-0 flex-1">
         <span className="truncate text-sm font-semibold text-foreground">{automation.name}</span>
@@ -113,19 +149,6 @@ const AutomationRow: React.FC<AutomationRowProps> = ({
         <span className="hidden text-xs text-muted-foreground/40 lg:inline">
           next {formatRelativeTime(automation.nextRunAt)}
         </span>
-      )}
-
-      {automation.runCount > 0 && (
-        <button
-          type="button"
-          className="hidden text-xs text-muted-foreground/30 transition-colors hover:text-foreground/60 sm:inline"
-          onClick={(e) => {
-            e.stopPropagation();
-            onViewLogs(automation);
-          }}
-        >
-          {automation.runCount} run{automation.runCount !== 1 ? 's' : ''}
-        </button>
       )}
 
       <span
