@@ -225,7 +225,7 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Automation title"
-          className="border-0 bg-transparent px-0 text-sm font-medium placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0"
+          className="!border-0 !bg-transparent !px-0 !text-sm !font-medium !shadow-none !outline-none !ring-0 placeholder:text-muted-foreground/40 focus:!border-transparent focus:!outline-none focus:!ring-0 focus-visible:!border-transparent focus-visible:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0"
         />
       </div>
 
@@ -235,7 +235,7 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Add prompt e.g. look for crashes in $sentry"
-          className="min-h-[100px] resize-none border-0 bg-transparent px-0 text-sm placeholder:text-muted-foreground/30 focus-visible:ring-0 focus-visible:ring-offset-0"
+          className="min-h-[100px] resize-none !border-0 !bg-transparent !px-0 !text-sm !shadow-none !outline-none !ring-0 placeholder:text-muted-foreground/30 focus:!border-transparent focus:!outline-none focus:!ring-0 focus-visible:!border-transparent focus-visible:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0"
         />
       </div>
 
@@ -252,9 +252,9 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
           {/* Worktree toggle */}
           <Button
             type="button"
-            variant={useWorktree ? 'secondary' : 'ghost'}
+            variant="outline"
             size="sm"
-            className="relative h-7 w-[88px] overflow-hidden text-xs text-muted-foreground"
+            className={`relative h-7 w-[110px] overflow-hidden rounded-md border border-border px-2.5 text-xs text-muted-foreground hover:bg-muted/60 ${useWorktree ? 'bg-muted/60' : 'bg-background'}`}
             onClick={() => {
               userTouchedWorktreeRef.current = true;
               setUseWorktree(!useWorktree);
@@ -288,12 +288,12 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
           <AgentSelector
             value={agentId as AgentProviderId}
             onChange={(id) => setAgentId(id)}
-            className="h-7 w-[160px]"
+            className="w-[160px] [&_button]:!h-7 [&_button]:!min-h-7 [&_button]:!justify-center [&_button]:!py-0 [&_button]:!px-2.5 [&_button]:!text-xs [&_button_span]:!flex-none [&_button_span]:!text-center"
           />
 
           {/* Project dropdown */}
           <DropdownMenu>
-            <DropdownMenuTrigger className="inline-flex h-7 w-auto items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted/60">
+            <DropdownMenuTrigger className="inline-flex h-7 w-auto items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground hover:bg-muted/60">
               {hasGithub ? (
                 <Github className="h-3 w-3 shrink-0" />
               ) : (
@@ -328,9 +328,9 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
           {/* Mode toggle */}
           <Button
             type="button"
-            variant={mode === 'trigger' ? 'secondary' : 'ghost'}
+            variant="outline"
             size="sm"
-            className="relative h-7 w-[88px] overflow-hidden text-xs text-muted-foreground"
+            className={`relative h-7 w-[110px] overflow-hidden rounded-md border border-border px-2.5 text-xs text-muted-foreground hover:bg-muted/60 ${mode === 'trigger' ? 'bg-muted/60' : 'bg-background'}`}
             onClick={() => setMode(mode === 'trigger' ? 'schedule' : 'trigger')}
           >
             <AnimatePresence mode="popLayout" initial={false}>
@@ -360,90 +360,70 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
           {/* Trigger config */}
           {mode === 'trigger' && (
             <Popover>
-              <PopoverTrigger className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted/60">
+              <PopoverTrigger className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground hover:bg-muted/60">
                 <Zap className="h-3 w-3" />
                 <span className="max-w-[160px] truncate">{formatTriggerLabel(triggerType)}</span>
               </PopoverTrigger>
-              <PopoverContent className="w-[300px] p-0" align="start">
-                <div className="border-b border-border/40 px-3 py-2.5">
-                  <p className="text-xs font-medium">Trigger Event</p>
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">
-                    Choose when this automation fires
-                  </p>
+              <PopoverContent className="w-[260px] p-0" align="start">
+                <div className="max-h-[240px] overflow-y-auto p-1">
+                  {TRIGGER_TYPES.map((t) => {
+                    const connected = integrationStatuses[t.integration];
+                    const active = triggerType === t.value;
+                    return (
+                      <button
+                        key={t.value}
+                        type="button"
+                        onClick={() => setTriggerType(t.value as TriggerType)}
+                        className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted/60 ${active ? 'bg-muted/60' : ''}`}
+                      >
+                        <Zap className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="flex-1 truncate">{t.label}</span>
+                        {!connected && (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-px text-[9px] font-medium text-amber-600 dark:text-amber-400">
+                            <span className="h-1 w-1 rounded-full bg-amber-500" />
+                            Setup
+                          </span>
+                        )}
+                        {active && <Check className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="space-y-3 p-3">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-medium text-muted-foreground">
-                      Event type
-                    </label>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex h-8 w-full items-center justify-between rounded-md border border-border bg-background px-2.5 text-xs hover:bg-muted/60">
-                        <span className="truncate">{formatTriggerLabel(triggerType)}</span>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="min-w-[260px]">
-                        {TRIGGER_TYPES.map((t) => {
-                          const connected = integrationStatuses[t.integration];
-                          return (
-                            <DropdownMenuItem
-                              key={t.value}
-                              onClick={() => setTriggerType(t.value as TriggerType)}
-                              className="text-xs"
-                            >
-                              <span className="flex flex-1 items-center gap-2">
-                                {t.label}
-                                {!connected && (
-                                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-px text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                                    <span className="h-1 w-1 rounded-full bg-amber-500" />
-                                    Setup required
-                                  </span>
-                                )}
-                              </span>
-                              {triggerType === t.value && (
-                                <Check className="h-3 w-3 text-muted-foreground" />
-                              )}
-                            </DropdownMenuItem>
-                          );
-                        })}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                  {!integrationStatuses[TRIGGER_INTEGRATION_MAP[triggerType]] && (
-                    <p className="rounded-md border border-amber-500/20 bg-amber-500/5 px-2.5 py-2 text-[10px] text-amber-600 dark:text-amber-400">
-                      {INTEGRATION_LABELS[TRIGGER_INTEGRATION_MAP[triggerType]]} needs to be set up.
-                      Connect it in Settings → Integrations for this trigger to work.
-                    </p>
-                  )}
-                  {(triggerType === 'github_pr' ||
-                    triggerType === 'github_issue' ||
-                    triggerType === 'gitlab_issue' ||
-                    triggerType === 'gitlab_mr' ||
-                    triggerType === 'forgejo_issue') && (
-                    <>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-medium text-muted-foreground">
-                          Branch filter
-                        </label>
+                {(!integrationStatuses[TRIGGER_INTEGRATION_MAP[triggerType]] ||
+                  triggerType === 'github_pr' ||
+                  triggerType === 'github_issue' ||
+                  triggerType === 'gitlab_issue' ||
+                  triggerType === 'gitlab_mr' ||
+                  triggerType === 'forgejo_issue') && (
+                  <div className="space-y-2 border-t border-border/40 p-2">
+                    {!integrationStatuses[TRIGGER_INTEGRATION_MAP[triggerType]] && (
+                      <p className="rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-600 dark:text-amber-400">
+                        Connect {INTEGRATION_LABELS[TRIGGER_INTEGRATION_MAP[triggerType]]} in
+                        Settings → Integrations.
+                      </p>
+                    )}
+                    {(triggerType === 'github_pr' ||
+                      triggerType === 'github_issue' ||
+                      triggerType === 'gitlab_issue' ||
+                      triggerType === 'gitlab_mr' ||
+                      triggerType === 'forgejo_issue') && (
+                      <div className="flex gap-2">
                         <Input
                           value={branchFilter}
                           onChange={(e) => setBranchFilter(e.target.value)}
-                          placeholder="e.g. feature/* or main"
-                          className="h-8 text-xs"
+                          placeholder="Branch filter"
+                          className="h-7 flex-1 text-xs"
                         />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-medium text-muted-foreground">
-                          Label filter
-                        </label>
                         <Input
                           value={labelFilter}
                           onChange={(e) => setLabelFilter(e.target.value)}
-                          placeholder="bug, enhancement"
-                          className="h-8 text-xs"
+                          placeholder="Labels"
+                          className="h-7 flex-1 text-xs"
                         />
                       </div>
-                    </>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </PopoverContent>
             </Popover>
           )}
@@ -451,7 +431,7 @@ const AutomationInlineCreate: React.FC<AutomationInlineCreateProps> = ({
           {/* Schedule (only in schedule mode) */}
           {mode === 'schedule' && (
             <Popover>
-              <PopoverTrigger className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted/60">
+              <PopoverTrigger className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground hover:bg-muted/60">
                 <Clock className="h-3 w-3" />
                 <span className="max-w-[140px] truncate">{schedulePreview}</span>
               </PopoverTrigger>
