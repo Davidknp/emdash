@@ -145,12 +145,21 @@ export function NavigationHistoryProvider({ children }: { children: ReactNode })
       // Must be a horizontally dominant gesture.
       if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
 
-      // Skip if a horizontally scrollable ancestor would consume the gesture.
+      // Only bail if an ancestor can actually scroll further in the gesture
+      // direction — otherwise we'd get stuck whenever the pointer is over
+      // a container with overflow-x:auto (terminal, editor, diff view, …).
+      const goingLeft = event.deltaX < 0;
       let node = event.target as HTMLElement | null;
       while (node && node !== document.body) {
         if (node.scrollWidth > node.clientWidth + 1) {
           const overflowX = window.getComputedStyle(node).overflowX;
-          if (overflowX === 'auto' || overflowX === 'scroll') return;
+          if (overflowX === 'auto' || overflowX === 'scroll') {
+            const maxScroll = node.scrollWidth - node.clientWidth;
+            const canScrollFurther = goingLeft
+              ? node.scrollLeft > 0
+              : node.scrollLeft < maxScroll - 1;
+            if (canScrollFurther) return;
+          }
         }
         node = node.parentElement;
       }
