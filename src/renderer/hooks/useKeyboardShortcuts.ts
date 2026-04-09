@@ -78,6 +78,18 @@ export const APP_SHORTCUTS = defineShortcuts({
     description: 'Switch to the previous task',
     category: 'Navigation',
   },
+  navigateBack: {
+    defaultHotkey: 'Alt+ArrowLeft',
+    label: 'Back',
+    description: 'Navigate back to the previous view',
+    category: 'Navigation',
+  },
+  navigateForward: {
+    defaultHotkey: 'Alt+ArrowRight',
+    label: 'Forward',
+    description: 'Navigate forward to the next view',
+    category: 'Navigation',
+  },
   newTask: {
     defaultHotkey: 'Mod+N',
     label: 'New Task',

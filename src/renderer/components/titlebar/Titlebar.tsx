@@ -1,7 +1,9 @@
-import { PanelLeft, PanelRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, PanelLeft, PanelRight } from 'lucide-react';
 import { ReactNode } from 'react';
+import { Button } from '@renderer/components/ui/button';
 import { Toggle } from '@renderer/components/ui/toggle';
 import { useWorkspaceLayoutContext } from '@renderer/core/view/layout-provider';
+import { useNavigationHistory } from '@renderer/core/view/navigation-history-provider';
 import { useWorkspaceSlots } from '@renderer/core/view/navigation-provider';
 import { cn } from '@renderer/lib/utils';
 import ShortcutHint from '../ui/shortcut-hint';
@@ -10,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 export function Titlebar({ leftSlot, rightSlot }: { leftSlot?: ReactNode; rightSlot?: ReactNode }) {
   const { isRightOpen, setCollapsed, isLeftOpen } = useWorkspaceLayoutContext();
   const { RightPanel } = useWorkspaceSlots();
+  const { canGoBack, canGoForward, goBack, goForward } = useNavigationHistory();
   return (
     <header
       className={cn(
@@ -20,7 +23,43 @@ export function Titlebar({ leftSlot, rightSlot }: { leftSlot?: ReactNode; rightS
       <div className="pointer-events-auto flex w-full items-center gap-1">
         {!isLeftOpen && <div className="[-webkit-app-region:no-drag]"></div>}
         <div className="flex w-full items-center justify-between">
-          <div className="flex items-center justify-start [-webkit-app-region:no-drag]">
+          <div className="flex items-center justify-start gap-0.5 [-webkit-app-region:no-drag]">
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-7 text-muted-foreground hover:text-foreground disabled:opacity-40"
+                  disabled={!canGoBack}
+                  onClick={() => goBack()}
+                  aria-label="Go back"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Go back
+                <ShortcutHint settingsKey="navigateBack" />
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-7 text-muted-foreground hover:text-foreground disabled:opacity-40"
+                  disabled={!canGoForward}
+                  onClick={() => goForward()}
+                  aria-label="Go forward"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Go forward
+                <ShortcutHint settingsKey="navigateForward" />
+              </TooltipContent>
+            </Tooltip>
             {!isLeftOpen && (
               <Tooltip>
                 <TooltipTrigger>

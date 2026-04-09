@@ -47,6 +47,8 @@ export const keyboardSettingsSchema = z
       closeModal: z.string().optional(),
       nextProject: z.string().optional(),
       prevProject: z.string().optional(),
+      navigateBack: z.string().optional(),
+      navigateForward: z.string().optional(),
       newTask: z.string().optional(),
       newProject: z.string().optional(),
       openInEditor: z.string().optional(),
@@ -95,6 +97,10 @@ export const interfaceSettingsSchema = z.object({
   autoRightSidebarBehavior: z.boolean(),
 });
 
+export const navigationSettingsSchema = z.object({
+  trackpadSwipe: z.boolean(),
+});
+
 export const browserPreviewSettingsSchema = z.object({ enabled: z.boolean() });
 
 export const openInSettingsSchema = z.object({
@@ -111,6 +117,7 @@ export const APP_SETTINGS_SCHEMA_MAP = {
   theme: themeSchema,
   openIn: openInSettingsSchema,
   interface: interfaceSettingsSchema,
+  navigation: navigationSettingsSchema,
   terminal: terminalSettingsSchema,
   browserPreview: browserPreviewSettingsSchema,
 } as const;
@@ -124,6 +131,7 @@ export const appSettingsSchema = z.object({
   theme: themeSchema,
   openIn: openInSettingsSchema,
   interface: interfaceSettingsSchema,
+  navigation: navigationSettingsSchema,
   terminal: terminalSettingsSchema,
   browserPreview: browserPreviewSettingsSchema,
 });

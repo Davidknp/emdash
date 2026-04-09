@@ -1,6 +1,6 @@
 import { makeAutoObservable, toJS } from 'mobx';
 import type { NavigationSnapshot } from '@shared/view-state';
-import type { ViewId, WrapParams } from '../view/registry';
+import { views, type ViewId, type WrapParams } from '../view/registry';
 import type { Snapshottable } from './snapshottable';
 
 type ViewParamsStore = Partial<{ [K in ViewId]: WrapParams<K> }>;
@@ -26,7 +26,9 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   }
 
   restoreSnapshot(snapshot: Partial<NavigationSnapshot>): void {
-    if (snapshot.currentViewId) this.currentViewId = snapshot.currentViewId as ViewId;
+    if (snapshot.currentViewId && snapshot.currentViewId in views) {
+      this.currentViewId = snapshot.currentViewId as ViewId;
+    }
     if (snapshot.viewParams) this.viewParamsStore = snapshot.viewParams as ViewParamsStore;
   }
 }

@@ -19,6 +19,7 @@ import {
 import TelemetryCard from './TelemetryCard';
 import TerminalSettingsCard from './TerminalSettingsCard';
 import ThemeCard from './ThemeCard';
+import { TrackpadNavigationSettingsCard } from './TrackpadNavigationSettingsCard';
 import { UpdateCard } from './UpdateCard';
 
 export type SettingsPageTab =
@@ -125,6 +126,7 @@ export function SettingsPage({
       sections: [
         { component: <ThemeCard /> },
         { component: <TerminalSettingsCard /> },
+        { title: 'Navigation', component: <TrackpadNavigationSettingsCard /> },
         { title: 'Keyboard shortcuts', component: <KeyboardSettingsCard /> },
         {
           title: 'Tools',
