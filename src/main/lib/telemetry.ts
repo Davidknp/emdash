@@ -426,6 +426,17 @@ export function getTelemetryStatus() {
   };
 }
 
+export function getTelemetryClientConfig() {
+  if (!apiKey || !host) {
+    return null;
+  }
+
+  return {
+    posthogKey: apiKey,
+    posthogHost: host,
+  };
+}
+
 export function setTelemetryEnabledViaUser(enabledFlag: boolean): void {
   userOptOut = !enabledFlag;
   telemetryKV.set('enabled', String(enabledFlag));

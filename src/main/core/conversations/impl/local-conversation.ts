@@ -105,6 +105,15 @@ export class LocalConversationProvider implements ConversationProvider {
 
     const spawnParams = resolveSpawnParams('agent', cfg);
 
+    log.info('LocalConversationProvider: spawning agent', {
+      conversationId: conversation.id,
+      providerId: conversation.providerId,
+      isResuming,
+      hasInitialPrompt: !!initialPrompt,
+      initialPromptPreview: initialPrompt ? initialPrompt.slice(0, 120) : null,
+      spawnArgs: spawnParams.args,
+    });
+
     const ptyId = makePtyId(conversation.providerId, conversation.id);
     const port = agentHookService.getPort();
     const token = agentHookService.getToken();

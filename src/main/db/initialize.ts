@@ -13,6 +13,38 @@ const sqlFiles = import.meta.glob('@root/drizzle/*.sql', {
 
 type JournalEntry = { idx: number; when: number; tag: string; breakpoints: boolean };
 
+function ensureAutomationColumns(connection: BetterSqlite3.Database): void {
+  const tableExists = connection
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='automations'")
+    .get() as { name: string } | undefined;
+
+  if (!tableExists) return;
+
+  const columns = connection.prepare('PRAGMA table_info(automations)').all() as Array<{
+    name: string;
+  }>;
+  const has = (name: string) => columns.some((c) => c.name === name);
+
+  if (!has('use_worktree')) {
+    connection.exec('ALTER TABLE automations ADD COLUMN use_worktree integer DEFAULT 1 NOT NULL');
+  }
+  if (!has('mode')) {
+    connection.exec("ALTER TABLE automations ADD COLUMN mode text DEFAULT 'schedule' NOT NULL");
+  }
+  if (!has('trigger_type')) {
+    connection.exec('ALTER TABLE automations ADD COLUMN trigger_type text');
+  }
+  if (!has('trigger_config')) {
+    connection.exec('ALTER TABLE automations ADD COLUMN trigger_config text');
+  }
+  if (!has('last_run_result')) {
+    connection.exec('ALTER TABLE automations ADD COLUMN last_run_result text');
+  }
+  if (!has('last_run_error')) {
+    connection.exec('ALTER TABLE automations ADD COLUMN last_run_error text');
+  }
+}
+
 function runBundledMigrations(connection: BetterSqlite3.Database): void {
   connection.exec(`
     CREATE TABLE IF NOT EXISTS __drizzle_migrations (
@@ -60,5 +92,6 @@ function runBundledMigrations(connection: BetterSqlite3.Database): void {
  */
 export async function initializeDatabase(): Promise<BetterSqlite3.Database> {
   runBundledMigrations(sqlite);
+  ensureAutomationColumns(sqlite);
   return sqlite;
 }

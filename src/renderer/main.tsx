@@ -8,6 +8,7 @@ import { rpc } from './core/ipc';
 import { codeEditorPool } from './core/monaco/monaco-code-pool';
 import { diffEditorPool } from './core/monaco/monaco-diff-pool';
 import { appState } from './core/stores/app-state';
+import { syncPosthogFeatureFlags } from './lib/posthog-flags';
 import { initSoundPlayer } from './lib/soundPlayer';
 
 async function bootstrap() {
@@ -18,11 +19,14 @@ async function bootstrap() {
   appState.appInfo.load();
   appState.update.start();
   initSoundPlayer();
-  const [navResult, sidebarResult] = await Promise.all([
+  const [telemetryResult, navResult, sidebarResult] = await Promise.all([
+    rpc.telemetry.getStatus(),
     rpc.viewState.get('navigation') as Promise<NavigationSnapshot> | null,
     rpc.viewState.get('sidebar'),
     appState.projects.load(),
   ]);
+
+  syncPosthogFeatureFlags(telemetryResult);
 
   if (navResult) appState.navigation.restoreSnapshot(navResult);
   if (sidebarResult) {

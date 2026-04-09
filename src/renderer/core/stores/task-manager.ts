@@ -1,4 +1,5 @@
 import { makeObservable, observable, runInAction } from 'mobx';
+import { taskCreatedExternallyChannel } from '@shared/events/appEvents';
 import { taskStatusUpdatedChannel } from '@shared/events/taskEvents';
 import type { CreateTaskError, CreateTaskParams, TaskLifecycleStatus } from '@shared/tasks';
 import type { TaskViewSnapshot } from '@shared/view-state';
@@ -45,6 +46,11 @@ export class TaskManagerStore {
     this.projectId = projectId;
     makeObservable(this, { tasks: observable });
 
+    events.on(taskCreatedExternallyChannel, (data) => {
+      if (data.projectId !== this.projectId) return;
+      void this.ingestExternalTask(data.taskId);
+    });
+
     events.on(taskStatusUpdatedChannel, ({ taskId, projectId: evtProjectId, status }) => {
       if (evtProjectId !== this.projectId) return;
       const store = this.tasks.get(taskId);
@@ -54,6 +60,19 @@ export class TaskManagerStore {
         });
       }
     });
+  }
+
+  private async ingestExternalTask(taskId: string): Promise<void> {
+    if (this.tasks.has(taskId)) return;
+    const fresh = await rpc.tasks.getTasks(this.projectId);
+    const created = fresh.find((t) => t.id === taskId);
+    if (!created) return;
+    runInAction(() => {
+      if (!this.tasks.has(taskId)) {
+        this.tasks.set(taskId, createUnprovisionedTask(created));
+      }
+    });
+    await this.provisionTask(taskId);
   }
 
   loadTasks(): Promise<void> {

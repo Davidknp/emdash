@@ -21,6 +21,11 @@ export const notificationFocusTaskChannel = defineEvent<{
   taskId: string;
 }>('notification:focus-task');
 
+export const taskCreatedExternallyChannel = defineEvent<{
+  projectId: string;
+  taskId: string;
+}>('task:created-externally');
+
 export const ptyStartedChannel = defineEvent<{
   id: string;
 }>('pty:started');

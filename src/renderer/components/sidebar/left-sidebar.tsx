@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { FolderPlus, MessageSquareShare, Plug, Puzzle, Settings } from 'lucide-react';
+import { Clock, FolderPlus, MessageSquareShare, Plug, Puzzle, Settings } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React, { useEffect, useRef } from 'react';
 import { useGithubContext } from '@renderer/core/github-context-provider';
@@ -11,6 +11,7 @@ import {
   useParams,
   useWorkspaceSlots,
 } from '@renderer/core/view/navigation-provider';
+import { useFeatureFlag } from '@renderer/hooks/use-feature-flag';
 import { MicroLabel } from '../ui/label';
 import ShortcutHint from '../ui/shortcut-hint';
 import { SidebarProjectItem } from './project-item';
@@ -123,6 +124,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
 
   const showAddProjectModal = useShowModal('addProjectModal');
   const showFeedbackModal = useShowModal('feedbackModal');
+  const automationsEnabled = useFeatureFlag('automations');
 
   return (
     <div className="flex flex-col h-full bg-background-tertiary text-foreground-tertiary-muted">
@@ -152,6 +154,17 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
               </span>
               <ShortcutHint settingsKey="newProject" />
             </SidebarMenuButton>
+            {automationsEnabled && (
+              <SidebarMenuButton
+                isActive={isCurrentView(currentView, 'automations')}
+                onClick={() => navigate('automations')}
+                aria-label="Automations"
+                className="w-full justify-start"
+              >
+                <Clock className="h-5 w-5 sm:h-4 sm:w-4" />
+                Automations
+              </SidebarMenuButton>
+            )}
             <SidebarMenuButton
               isActive={isCurrentView(currentView, 'skills')}
               onClick={() => navigate('skills')}

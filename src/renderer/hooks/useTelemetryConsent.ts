@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { rpc } from '../core/ipc';
+import { syncPosthogFeatureFlags } from '../lib/posthog-flags';
 
 type TelemetryState = {
   prefEnabled: boolean;
@@ -20,21 +21,24 @@ export function useTelemetryConsent() {
 
   const refresh = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true }));
-    // try {
-    //   const res = await rpc.telemetry.getStatus();
-    //   if (res?.status) {
-    //     const { envDisabled: envOff, userOptOut, hasKeyAndHost } = res.status;
-    //     setState({
-    //       prefEnabled: !Boolean(envOff) && userOptOut !== true,
-    //       envDisabled: Boolean(envOff),
-    //       hasKeyAndHost: Boolean(hasKeyAndHost),
-    //       loading: false,
-    //     });
-    //     return;
-    //   }
-    // } catch {
-    //   // ignore and fall through to loading reset
-    // }
+    try {
+      const res = await rpc.telemetry.getStatus();
+      syncPosthogFeatureFlags(res);
+
+      if (res?.status) {
+        const { envDisabled: envOff, userOptOut, hasKeyAndHost } = res.status;
+        setState({
+          prefEnabled: !Boolean(envOff) && userOptOut !== true,
+          envDisabled: Boolean(envOff),
+          hasKeyAndHost: Boolean(hasKeyAndHost),
+          loading: false,
+        });
+        return;
+      }
+    } catch {
+      // ignore and fall through to loading reset
+    }
+
     setState((prev) => ({ ...prev, loading: false }));
   }, []);
 

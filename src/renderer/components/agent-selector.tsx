@@ -108,7 +108,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = observer(
               <span className="flex-1 truncate text-muted-foreground">Select agent</span>
             )}
           </ComboboxTrigger>
-          <ComboboxContent className="min-w-(--anchor-width)">
+          <ComboboxContent className="min-w-[200px]">
             <ComboboxInput showTrigger={false} placeholder="Search agents..." />
             <ComboboxList className="pb-0">
               {(group: AgentGroup) => (

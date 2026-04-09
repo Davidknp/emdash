@@ -1,4 +1,5 @@
 import type { Octokit } from '@octokit/rest';
+import { log } from '@main/lib/logger';
 import { getOctokit } from './octokit-provider';
 import { splitRepo } from './utils';
 
@@ -70,7 +71,8 @@ export class GitHubIssueServiceImpl implements GitHubIssueService {
       return data
         .filter((issue) => !issue.pull_request)
         .map((item) => this.mapIssue(item as unknown as RestIssue));
-    } catch {
+    } catch (error) {
+      log.error(`[GitHub] listIssues failed for ${nameWithOwner}:`, error);
       return [];
     }
   }
