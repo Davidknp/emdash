@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Bot, Clock, FolderPlus, MessageSquareShare, Plug, Puzzle, Settings } from 'lucide-react';
+import { Clock, FolderPlus, MessageSquareShare, Plug, Puzzle, Settings } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React, { useEffect, useRef } from 'react';
 import { useGithubContext } from '@renderer/core/github-context-provider';
