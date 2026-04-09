@@ -138,8 +138,8 @@ export function SettingsPage({
 
   return (
     <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-[1060px] flex-col gap-6 px-8">
-        <div className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] gap-8 overflow-hidden">
+      <div className="mx-auto flex h-full min-h-0 w-full flex-col gap-6 px-4 sm:px-6 lg:px-8 xl:px-12">
+        <div className="grid min-h-0 flex-1 grid-cols-[10rem_minmax(0,1fr)] gap-4 overflow-hidden sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-6 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-8">
           <div className="py-10">
             <nav className="flex min-h-0 w-52 flex-col gap-0.5 overflow-y-auto">
               {tabs.map((tab) => {
@@ -171,7 +171,7 @@ export function SettingsPage({
           {/* Content container */}
           {currentContent && (
             <div className="min-h-0 min-w-0 flex-1 justify-center overflow-y-auto">
-              <div className="mx-auto w-full max-w-4xl space-y-8 py-10">
+              <div className="mx-auto w-full space-y-8 py-10">
                 <div className="flex flex-col gap-6">
                   <div className="flex flex-col gap-1">
                     <h2 className="text-xl">{currentContent.title}</h2>

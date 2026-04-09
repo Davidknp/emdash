@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
-import { useCallback, useMemo, useState } from 'react';
-import { AgentProviderId } from '@shared/agent-provider-registry';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AgentProviderId, getProvider } from '@shared/agent-provider-registry';
 import { AgentSelector } from '@renderer/components/agent-selector';
 import { ConfirmButton } from '@renderer/components/ui/confirm-button';
 import {
@@ -37,10 +37,43 @@ export const CreateConversationModal = observer(function CreateConversationModal
   const conversationMgr = asProvisioned(getTaskStore(projectId, taskId))?.conversations;
   const { value: taskSettings } = useAppSettingsKey('tasks');
   const defaultSkipPermissions = taskSettings?.autoApproveByDefault ?? false;
-  const [skipPermissionsOverride, setSkipPermissionsOverride] = useState<boolean | undefined>(
-    undefined
+
+  // Remember the last skip-permissions choice per provider.
+  const SKIP_PERMISSIONS_BY_PROVIDER_KEY = 'emdash-skip-permissions-by-provider';
+  const readSkipMap = (): Record<string, boolean> => {
+    try {
+      const stored = localStorage.getItem(SKIP_PERMISSIONS_BY_PROVIDER_KEY);
+      if (stored) return JSON.parse(stored) as Record<string, boolean>;
+    } catch {}
+    return {};
+  };
+  const [skipPermissions, setSkipPermissionsState] = useState<boolean>(
+    () => readSkipMap()[providerId] ?? defaultSkipPermissions
   );
-  const skipPermissions = skipPermissionsOverride ?? defaultSkipPermissions;
+
+  // When the user switches provider, restore that provider's remembered choice.
+  useEffect(() => {
+    const map = readSkipMap();
+    setSkipPermissionsState(map[providerId] ?? defaultSkipPermissions);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerId]);
+  // Providers where the skip-permissions toggle should never be shown,
+  // even if the registry technically declares an autoApproveFlag.
+  const SKIP_PERMISSIONS_HIDDEN: ReadonlySet<AgentProviderId> = new Set(['amp', 'pi', 'droid']);
+  const supportsSkipPermissions =
+    Boolean(getProvider(providerId)?.autoApproveFlag) && !SKIP_PERMISSIONS_HIDDEN.has(providerId);
+
+  const setSkipPermissions = useCallback(
+    (next: boolean) => {
+      setSkipPermissionsState(next);
+      try {
+        const map = readSkipMap();
+        map[providerId] = next;
+        localStorage.setItem(SKIP_PERMISSIONS_BY_PROVIDER_KEY, JSON.stringify(map));
+      } catch {}
+    },
+    [providerId]
+  );
 
   const providerIdConversationsCount = useMemo(() => {
     if (!conversationMgr) return 0;
@@ -59,21 +92,39 @@ export const CreateConversationModal = observer(function CreateConversationModal
       projectId,
       taskId,
       id,
-      autoApprove: skipPermissions,
+      autoApprove: supportsSkipPermissions ? skipPermissions : false,
       provider: providerId,
       title,
       initialSize: getConversationsPaneSize(),
     });
     onSuccess({ conversationId: id });
-  }, [conversationMgr, providerId, title, onSuccess, projectId, taskId, skipPermissions]);
+  }, [
+    conversationMgr,
+    providerId,
+    title,
+    onSuccess,
+    projectId,
+    taskId,
+    skipPermissions,
+    supportsSkipPermissions,
+  ]);
 
   return (
     <>
       <DialogHeader>
         <DialogTitle>Create Conversation</DialogTitle>
       </DialogHeader>
-      <DialogContentArea>
-        <FieldGroup>
+      <DialogContentArea className="pb-2">
+        <FieldGroup
+          className="transition-[min-height] duration-300 ease-out"
+          style={{
+            minHeight: supportsSkipPermissions ? 130 : 0,
+            // Delay the height change in both directions until the combobox
+            // close animation is done (~150ms), otherwise the trigger moves
+            // while the dropdown is still animating out and we get a flicker.
+            transitionDelay: '150ms',
+          }}
+        >
           <Field>
             <FieldLabel>Agent</FieldLabel>
             <AgentSelector
@@ -82,9 +133,20 @@ export const CreateConversationModal = observer(function CreateConversationModal
               connectionId={connectionId}
             />
           </Field>
-          <Field>
+          <Field
+            className="transition-opacity duration-150 ease-out"
+            style={{
+              opacity: supportsSkipPermissions ? 1 : 0,
+              visibility: supportsSkipPermissions ? 'visible' : 'hidden',
+              pointerEvents: supportsSkipPermissions ? undefined : 'none',
+            }}
+          >
             <div className="flex items-center gap-2">
-              <Switch checked={skipPermissions} onCheckedChange={setSkipPermissionsOverride} />
+              <Switch
+                checked={skipPermissions}
+                onCheckedChange={setSkipPermissions}
+                disabled={!supportsSkipPermissions}
+              />
               <FieldLabel>Dangerously skip permissions</FieldLabel>
             </div>
           </Field>

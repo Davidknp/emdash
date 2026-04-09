@@ -88,6 +88,12 @@ export function WorkspaceContentLayout({
     storage: localStorage,
   });
 
+  // When there is no right panel, force the main panel to take 100%.
+  // Otherwise the persisted layout (e.g. [75, 25] from a view that had a
+  // right panel) is applied and the main panel ends up sized to 75% with
+  // empty space on the right.
+  const effectiveDefaultLayout = hasRight ? defaultLayout : ['100%'];
+
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       {titlebarSlot}
@@ -95,8 +101,8 @@ export function WorkspaceContentLayout({
         id="workspace-inner"
         orientation="horizontal"
         className="flex-1 overflow-hidden"
-        defaultLayout={defaultLayout}
-        onLayoutChanged={onLayoutChanged}
+        defaultLayout={effectiveDefaultLayout}
+        onLayoutChanged={hasRight ? onLayoutChanged : undefined}
       >
         <ResizablePanel id="workspace-inner-main" minSize={`${MAIN_PANEL_MIN_SIZE}%`}>
           <div className="flex h-full flex-col overflow-hidden">{mainPanel}</div>

@@ -7,6 +7,7 @@ type ViewParamsStore = Partial<{ [K in ViewId]: WrapParams<K> }>;
 
 export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   currentViewId: ViewId = 'home';
+  previousViewId: ViewId | null = null;
   viewParamsStore: ViewParamsStore = {};
 
   constructor() {
@@ -14,6 +15,9 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   }
 
   sync(viewId: ViewId, paramsStore: ViewParamsStore): void {
+    if (viewId !== this.currentViewId) {
+      this.previousViewId = this.currentViewId;
+    }
     this.currentViewId = viewId;
     this.viewParamsStore = paramsStore;
   }
