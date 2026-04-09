@@ -1,4 +1,4 @@
-CREATE TABLE `automation_run_logs` (
+CREATE TABLE IF NOT EXISTS `automation_run_logs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`automation_id` text NOT NULL,
 	`started_at` text NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE `automation_run_logs` (
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE set null
 );
 --> statement-breakpoint
-CREATE TABLE `automations` (
+CREATE TABLE IF NOT EXISTS `automations` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
 	`project_name` text DEFAULT '' NOT NULL,
@@ -33,8 +33,8 @@ CREATE TABLE `automations` (
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX `idx_automation_run_logs_automation_started` ON `automation_run_logs` (`automation_id`,`started_at`);--> statement-breakpoint
-CREATE INDEX `idx_automation_run_logs_status` ON `automation_run_logs` (`status`);--> statement-breakpoint
-CREATE INDEX `idx_automations_project_id` ON `automations` (`project_id`);--> statement-breakpoint
-CREATE INDEX `idx_automations_status_next_run` ON `automations` (`status`,`next_run_at`);--> statement-breakpoint
-CREATE INDEX `idx_automations_updated_at` ON `automations` (`updated_at`);
+CREATE INDEX IF NOT EXISTS `idx_automation_run_logs_automation_started` ON `automation_run_logs` (`automation_id`,`started_at`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `idx_automation_run_logs_status` ON `automation_run_logs` (`status`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `idx_automations_project_id` ON `automations` (`project_id`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `idx_automations_status_next_run` ON `automations` (`status`,`next_run_at`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `idx_automations_updated_at` ON `automations` (`updated_at`);
