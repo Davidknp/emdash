@@ -15,6 +15,7 @@ export const AGENT_ENV_VARS = [
   'AZURE_OPENAI_API_ENDPOINT',
   'AZURE_OPENAI_API_KEY',
   'AZURE_OPENAI_KEY',
+  'CLAUDE_CONFIG_DIR',
   'CODEBUFF_API_KEY',
   'COPILOT_CLI_TOKEN',
   'CURSOR_API_KEY',
@@ -56,29 +57,37 @@ function getDisplayEnv(): Record<string, string> {
   return env;
 }
 
+function envOrDefault(key: string, defaultValue: string): string {
+  return process.env[key] || defaultValue;
+}
+
 function getWindowsEssentialEnv(resolvedPath: string): Record<string, string> {
   const home = os.homedir();
+  const temp = process.env.TEMP || process.env.TMP || '';
+
   return {
     PATH: resolvedPath,
-    PATHEXT: process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC',
-    SystemRoot: process.env.SystemRoot || 'C:\\Windows',
-    ComSpec: process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe',
-    TEMP: process.env.TEMP || process.env.TMP || '',
-    TMP: process.env.TMP || process.env.TEMP || '',
-    USERPROFILE: process.env.USERPROFILE || home,
-    APPDATA: process.env.APPDATA || '',
-    LOCALAPPDATA: process.env.LOCALAPPDATA || '',
-    HOMEDRIVE: process.env.HOMEDRIVE || '',
-    HOMEPATH: process.env.HOMEPATH || '',
+    PATHEXT: envOrDefault('PATHEXT', '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC'),
+    SystemRoot: envOrDefault('SystemRoot', 'C:\\Windows'),
+    ComSpec: envOrDefault('ComSpec', 'C:\\Windows\\System32\\cmd.exe'),
+    TEMP: temp,
+    TMP: temp,
+    USERPROFILE: envOrDefault('USERPROFILE', home),
+    APPDATA: envOrDefault('APPDATA', ''),
+    LOCALAPPDATA: envOrDefault('LOCALAPPDATA', ''),
+    HOMEDRIVE: envOrDefault('HOMEDRIVE', ''),
+    HOMEPATH: envOrDefault('HOMEPATH', ''),
     USERNAME: process.env.USERNAME || os.userInfo().username,
-    ProgramFiles: process.env.ProgramFiles || 'C:\\Program Files',
-    'ProgramFiles(x86)': process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)',
-    ProgramData: process.env.ProgramData || 'C:\\ProgramData',
-    CommonProgramFiles: process.env.CommonProgramFiles || 'C:\\Program Files\\Common Files',
-    'CommonProgramFiles(x86)':
-      process.env['CommonProgramFiles(x86)'] || 'C:\\Program Files (x86)\\Common Files',
-    ProgramW6432: process.env.ProgramW6432 || 'C:\\Program Files',
-    CommonProgramW6432: process.env.CommonProgramW6432 || 'C:\\Program Files\\Common Files',
+    ProgramFiles: envOrDefault('ProgramFiles', 'C:\\Program Files'),
+    'ProgramFiles(x86)': envOrDefault('ProgramFiles(x86)', 'C:\\Program Files (x86)'),
+    ProgramData: envOrDefault('ProgramData', 'C:\\ProgramData'),
+    CommonProgramFiles: envOrDefault('CommonProgramFiles', 'C:\\Program Files\\Common Files'),
+    'CommonProgramFiles(x86)': envOrDefault(
+      'CommonProgramFiles(x86)',
+      'C:\\Program Files (x86)\\Common Files'
+    ),
+    ProgramW6432: envOrDefault('ProgramW6432', 'C:\\Program Files'),
+    CommonProgramW6432: envOrDefault('CommonProgramW6432', 'C:\\Program Files\\Common Files'),
   };
 }
 
