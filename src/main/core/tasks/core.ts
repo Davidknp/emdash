@@ -12,6 +12,7 @@ export function mapTaskRowToTask(row: TaskRow): Task {
     linkedIssue: row.linkedIssue ? (JSON.parse(row.linkedIssue) as Issue) : undefined,
     archivedAt: row.archivedAt ?? undefined,
     lastInteractedAt: row.lastInteractedAt ?? undefined,
+    workspaceInstanceId: row.workspaceInstanceId ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

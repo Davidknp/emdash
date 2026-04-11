@@ -16,6 +16,7 @@ import { githubAuthService } from './core/github/services/github-auth-service';
 import { projectManager } from './core/projects/project-manager';
 import { appSettingsService } from './core/settings/settings-service';
 import { updateService } from './core/updates/update-service';
+import { reconcileOnStartup as reconcileWorkspaceInstances } from './core/workspace-provider/workspace-provider-service';
 import { initializeDatabase } from './db/initialize';
 import { log } from './lib/logger';
 import * as telemetry from './lib/telemetry';
@@ -102,6 +103,10 @@ app.whenReady().then(async () => {
   providerTokenRegistry.register('github', (token) => githubAuthService.storeToken(token));
 
   registerRPCRouter(rpcRouter, ipcMain);
+
+  reconcileWorkspaceInstances().catch((e) => {
+    log.warn('Failed to reconcile workspace instances:', e);
+  });
 
   localDependencyManager.probeAll().catch((e) => {
     log.error('Failed to probe dependencies:', e);

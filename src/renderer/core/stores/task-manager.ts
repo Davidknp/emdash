@@ -29,6 +29,8 @@ function formatCreateTaskError(error: CreateTaskError): string {
       return `Could not fetch the pull request branch: ${error.message}`;
     case 'provision-failed':
       return `Task could not be provisioned: ${error.message}`;
+    case 'feature-disabled':
+      return error.message;
   }
 }
 
@@ -101,6 +103,11 @@ export class TaskManagerStore {
         current.transitionToUnprovisioned(result.data, 'provision');
       }
     });
+
+    // For workspace-provider tasks, provisioning is orchestrated externally:
+    // the create-task modal triggers rpc.workspaceProvider.provision, and
+    // main-panel.tsx calls provisionTask once the remote workspace is ready.
+    if (params.strategy.kind === 'workspace-provider') return;
 
     await this.provisionTask(params.id);
   }

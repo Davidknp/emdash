@@ -71,6 +71,31 @@ export const appSettings = sqliteTable(
   })
 );
 
+export const workspaceInstances = sqliteTable(
+  'workspace_instances',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id').notNull(),
+    externalId: text('external_id'),
+    host: text('host').notNull(),
+    port: integer('port').notNull().default(22),
+    username: text('username'),
+    worktreePath: text('worktree_path'),
+    status: text('status').notNull().default('provisioning'), // provisioning|ready|terminated|error
+    connectionId: text('connection_id').references(() => sshConnections.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+    terminatedAt: text('terminated_at'),
+  },
+  (table) => ({
+    taskIdIdx: index('idx_workspace_instances_task_id').on(table.taskId),
+    statusIdx: index('idx_workspace_instances_status').on(table.status),
+  })
+);
+
 export const tasks = sqliteTable(
   'tasks',
   {
@@ -84,6 +109,9 @@ export const tasks = sqliteTable(
     taskBranch: text('task_branch'),
     linkedIssue: text('linked_issue'),
     archivedAt: text('archived_at'), // null = active, timestamp = archived
+    workspaceInstanceId: text('workspace_instance_id').references(() => workspaceInstances.id, {
+      onDelete: 'set null',
+    }),
     createdAt: text('created_at')
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),
@@ -332,10 +360,21 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
 }));
 
+export const workspaceInstancesRelations = relations(workspaceInstances, ({ one }) => ({
+  sshConnection: one(sshConnections, {
+    fields: [workspaceInstances.connectionId],
+    references: [sshConnections.id],
+  }),
+}));
+
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
   project: one(projects, {
     fields: [tasks.projectId],
     references: [projects.id],
+  }),
+  workspaceInstance: one(workspaceInstances, {
+    fields: [tasks.workspaceInstanceId],
+    references: [workspaceInstances.id],
   }),
   conversations: many(conversations),
   lineComments: many(lineComments),
@@ -374,3 +413,5 @@ export type LineCommentRow = typeof lineComments.$inferSelect;
 export type LineCommentInsert = typeof lineComments.$inferInsert;
 export type EditorBufferRow = typeof editorBuffers.$inferSelect;
 export type EditorBufferInsert = typeof editorBuffers.$inferInsert;
+export type WorkspaceInstanceRow = typeof workspaceInstances.$inferSelect;
+export type WorkspaceInstanceInsert = typeof workspaceInstances.$inferInsert;

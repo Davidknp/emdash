@@ -27,6 +27,12 @@ export type Task = {
   archivedAt?: string;
   lastInteractedAt?: string;
   linkedIssue?: Issue;
+  /**
+   * When set, this task is backed by a BYOI workspace instance. The provider
+   * layer uses this to build an SSH-backed TaskProvider instead of a local
+   * worktree. See `workspace_instances` table and `LocalProjectProvider`.
+   */
+  workspaceInstanceId?: string;
 };
 
 export type TaskBootstrapStatus =
@@ -54,7 +60,8 @@ export type CreateTaskStrategy =
       taskBranch?: string;
       pushBranch?: boolean;
     }
-  | { kind: 'no-worktree' };
+  | { kind: 'no-worktree' }
+  | { kind: 'workspace-provider' };
 
 export type CreateTaskParams = {
   id: string;
@@ -78,7 +85,8 @@ export type CreateTaskError =
   | { type: 'invalid-base-branch'; branch: string }
   | { type: 'worktree-setup-failed'; message: string }
   | { type: 'pr-fetch-failed'; message: string }
-  | { type: 'provision-failed'; message: string };
+  | { type: 'provision-failed'; message: string }
+  | { type: 'feature-disabled'; message: string };
 
 export function formatIssueAsPrompt(issue: Issue, initialPrompt?: string): string {
   const parts = [`[${issue.identifier}] ${issue.title}`, issue.url, issue.description].filter(

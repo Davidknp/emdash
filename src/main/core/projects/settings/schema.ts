@@ -1,5 +1,13 @@
 import z from 'zod';
 
+export const workspaceProviderSchema = z.object({
+  type: z.literal('script'),
+  provisionCommand: z.string(),
+  terminateCommand: z.string(),
+});
+
+export type WorkspaceProviderConfig = z.infer<typeof workspaceProviderSchema>;
+
 export const projectSettingsSchema = z.object({
   preservePatterns: z
     .array(z.string())
@@ -25,6 +33,7 @@ export const projectSettingsSchema = z.object({
   worktreeDirectory: z.string().optional(),
   defaultBranch: z.string().optional(),
   remote: z.string().optional(),
+  workspaceProvider: workspaceProviderSchema.optional(),
 });
 
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;

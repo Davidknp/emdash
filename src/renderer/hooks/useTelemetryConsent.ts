@@ -5,6 +5,8 @@ type TelemetryState = {
   prefEnabled: boolean;
   envDisabled: boolean;
   hasKeyAndHost: boolean;
+  posthogKey?: string;
+  posthogHost?: string;
   loading: boolean;
 };
 
@@ -20,22 +22,19 @@ export function useTelemetryConsent() {
 
   const refresh = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true }));
-    // try {
-    //   const res = await rpc.telemetry.getStatus();
-    //   if (res?.status) {
-    //     const { envDisabled: envOff, userOptOut, hasKeyAndHost } = res.status;
-    //     setState({
-    //       prefEnabled: !Boolean(envOff) && userOptOut !== true,
-    //       envDisabled: Boolean(envOff),
-    //       hasKeyAndHost: Boolean(hasKeyAndHost),
-    //       loading: false,
-    //     });
-    //     return;
-    //   }
-    // } catch {
-    //   // ignore and fall through to loading reset
-    // }
-    setState((prev) => ({ ...prev, loading: false }));
+    try {
+      const res = await rpc.telemetry.getStatus();
+      setState({
+        prefEnabled: !res.envDisabled && !res.userOptOut,
+        envDisabled: res.envDisabled,
+        hasKeyAndHost: res.hasKeyAndHost,
+        posthogKey: res.posthogKey,
+        posthogHost: res.posthogHost,
+        loading: false,
+      });
+    } catch {
+      setState((prev) => ({ ...prev, loading: false }));
+    }
   }, []);
 
   const setTelemetryEnabled = useCallback(

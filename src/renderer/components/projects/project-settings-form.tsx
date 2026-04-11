@@ -20,6 +20,7 @@ import { Switch } from '@renderer/components/ui/switch';
 import { Textarea } from '@renderer/components/ui/textarea';
 import { useBranches } from '@renderer/core/projects/repository/use-branches';
 import { useRemotes } from '@renderer/core/projects/repository/use-remotes';
+import { useFeatureFlag } from '@renderer/hooks/useFeatureFlag';
 
 type FormState = {
   preservePatterns: string;
@@ -31,6 +32,9 @@ type FormState = {
   worktreeDirectory: string;
   defaultBranch: string;
   remote: string;
+  workspaceProviderEnabled: boolean;
+  workspaceProvisionCommand: string;
+  workspaceTerminateCommand: string;
 };
 
 function normalizeScript(val: string | string[] | undefined): string {
@@ -49,6 +53,9 @@ export function settingsToForm(s: ProjectSettings): FormState {
     worktreeDirectory: s.worktreeDirectory ?? '',
     defaultBranch: s.defaultBranch ?? '',
     remote: s.remote ?? '',
+    workspaceProviderEnabled: !!s.workspaceProvider,
+    workspaceProvisionCommand: s.workspaceProvider?.provisionCommand ?? '',
+    workspaceTerminateCommand: s.workspaceProvider?.terminateCommand ?? '',
   };
 }
 
@@ -68,6 +75,14 @@ export function formToSettings(f: FormState): ProjectSettings {
     worktreeDirectory: f.worktreeDirectory || undefined,
     defaultBranch: f.defaultBranch || undefined,
     remote: f.remote || undefined,
+    workspaceProvider:
+      f.workspaceProviderEnabled && f.workspaceProvisionCommand && f.workspaceTerminateCommand
+        ? {
+            type: 'script' as const,
+            provisionCommand: f.workspaceProvisionCommand,
+            terminateCommand: f.workspaceTerminateCommand,
+          }
+        : undefined,
   };
 }
 
@@ -88,6 +103,7 @@ export function ProjectSettingsForm({
 }: ProjectSettingsFormProps) {
   const { branches } = useBranches(projectId);
   const { remotes } = useRemotes(projectId);
+  const workspaceProviderFlag = useFeatureFlag('workspace-provider');
 
   const baseline = useMemo(() => settingsToForm(initial), [initial]);
   const [form, setForm] = useState<FormState>(baseline);
@@ -262,6 +278,61 @@ export function ProjectSettingsForm({
               />
             </Field>
           </div>
+          {workspaceProviderFlag && (
+            <>
+              <Separator />
+
+              <Field orientation="horizontal">
+                <div className="flex flex-1 flex-col gap-1">
+                  <FieldTitle>Workspace provider</FieldTitle>
+                  <FieldDescription>
+                    Run tasks on custom infrastructure (VMs, containers, cloud) using provision and
+                    teardown scripts.
+                  </FieldDescription>
+                </div>
+                <Switch
+                  checked={form.workspaceProviderEnabled}
+                  onCheckedChange={(checked) => update('workspaceProviderEnabled', checked)}
+                />
+              </Field>
+
+              {form.workspaceProviderEnabled && (
+                <div className="flex flex-col gap-4 pl-1">
+                  <Field>
+                    <FieldTitle className="text-xs font-normal text-muted-foreground">
+                      Provision command
+                    </FieldTitle>
+                    <FieldDescription>
+                      Shell command that provisions a workspace. Must output JSON with at least a{' '}
+                      <code className="font-mono text-xs">host</code> field. Stderr is streamed as
+                      progress.
+                    </FieldDescription>
+                    <Textarea
+                      rows={3}
+                      placeholder="./scripts/provision.sh"
+                      value={form.workspaceProvisionCommand}
+                      onChange={(e) => update('workspaceProvisionCommand', e.target.value)}
+                    />
+                  </Field>
+
+                  <Field>
+                    <FieldTitle className="text-xs font-normal text-muted-foreground">
+                      Terminate command
+                    </FieldTitle>
+                    <FieldDescription>
+                      Shell command that tears down the provisioned workspace.
+                    </FieldDescription>
+                    <Textarea
+                      rows={3}
+                      placeholder="./scripts/terminate.sh"
+                      value={form.workspaceTerminateCommand}
+                      onChange={(e) => update('workspaceTerminateCommand', e.target.value)}
+                    />
+                  </Field>
+                </div>
+              )}
+            </>
+          )}
         </FieldGroup>
       </div>
       <div className="flex justify-end gap-2 pt-5 pb-10">

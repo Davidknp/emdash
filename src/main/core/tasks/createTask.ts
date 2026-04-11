@@ -129,6 +129,13 @@ export async function createTask(params: CreateTaskParams): Promise<Result<Task,
       // taskBranch remains undefined → provider uses the project root directory.
       break;
     }
+
+    case 'workspace-provider': {
+      // No branch creation or worktree — provisioning is handled separately by the
+      // workspace provider service. The renderer triggers rpc.workspaceProvider.provision()
+      // after task creation, then calls provisionTask once the workspace is ready.
+      break;
+    }
   }
 
   const [taskRow] = await db
@@ -157,9 +164,14 @@ export async function createTask(params: CreateTaskParams): Promise<Result<Task,
     updatedAt: taskRow.updatedAt,
   };
 
-  const provisionResult = await project.provisionTask(task, [], []);
-  if (!provisionResult.success) {
-    return err(mapProvisionError(provisionResult.error));
+  // For workspace-provider tasks, skip immediate provisioning.
+  // The renderer will trigger workspace provisioning and then call provisionTask
+  // once the remote workspace is ready.
+  if (strategy.kind !== 'workspace-provider') {
+    const provisionResult = await project.provisionTask(task, [], []);
+    if (!provisionResult.success) {
+      return err(mapProvisionError(provisionResult.error));
+    }
   }
 
   const lastInteractedAt = new Date().toISOString();

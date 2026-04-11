@@ -1,11 +1,15 @@
 import { Loader2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
+import { useEffect } from 'react';
+import { WorkspaceProvisioningOverlay } from '@renderer/components/workspace-provisioning-overlay';
 import {
+  getTaskManagerStore,
   getTaskStore,
   getTaskView,
   taskErrorMessage,
   taskViewKind,
 } from '@renderer/core/stores/task-selectors';
+import { useWorkspaceInstance } from '@renderer/hooks/useWorkspaceInstance';
 import { ConversationsPanel } from './conversations/conversations-panel';
 import { DiffView } from './diff-view/main-panel/diff-view';
 import { EditorMainPanel } from './editor/editor-main-panel';
@@ -15,6 +19,15 @@ export const TaskMainPanel = observer(function TaskMainPanel() {
   const { projectId, taskId } = useTaskViewContext();
   const taskStore = getTaskStore(projectId, taskId);
   const kind = taskViewKind(taskStore, projectId);
+  const { instance: workspaceInstance, refetch: refetchInstance } = useWorkspaceInstance(taskId);
+
+  // When a workspace-provider workspace transitions to `ready`, trigger the task's
+  // normal provisioning path (now that the remote workspace is available).
+  useEffect(() => {
+    if (workspaceInstance?.status === 'ready') {
+      void getTaskManagerStore(projectId)?.provisionTask(taskId);
+    }
+  }, [workspaceInstance?.status, projectId, taskId]);
 
   if (kind === 'creating') {
     return (
@@ -35,6 +48,20 @@ export const TaskMainPanel = observer(function TaskMainPanel() {
           </p>
         </div>
       </div>
+    );
+  }
+
+  // Show provisioning overlay with live logs when a workspace instance is being provisioned
+  if (
+    workspaceInstance &&
+    (workspaceInstance.status === 'provisioning' || workspaceInstance.status === 'error')
+  ) {
+    return (
+      <WorkspaceProvisioningOverlay
+        instanceId={workspaceInstance.id}
+        status={workspaceInstance.status}
+        onRetry={() => void refetchInstance()}
+      />
     );
   }
 

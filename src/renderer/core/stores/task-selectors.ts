@@ -40,7 +40,9 @@ export type TaskViewKind =
   | 'teardown'
   | 'teardown-error'
   | 'idle'
-  | 'ready';
+  | 'ready'
+  | 'workspace-provisioning' // workspace instance is being provisioned
+  | 'workspace-error'; // workspace provisioning failed
 
 /**
  * Derives the task view kind from the project + task store state.

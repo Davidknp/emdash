@@ -131,3 +131,35 @@ export async function resolveIdentityAgent(hostname: string): Promise<string | u
     return undefined;
   }
 }
+
+export type ResolvedSshAlias = {
+  hostname: string;
+  port?: number;
+  user?: string;
+  identityFile?: string;
+  identityAgent?: string;
+};
+
+/**
+ * Resolves an SSH host alias from ~/.ssh/config.
+ *
+ * If `host` matches a `Host` entry, returns the resolved connection details
+ * (HostName, Port, User, IdentityFile, IdentityAgent). Otherwise returns
+ * undefined (use the host as-is).
+ */
+export async function resolveSshAlias(host: string): Promise<ResolvedSshAlias | undefined> {
+  try {
+    const hosts = await parseSshConfigFile();
+    const match = hosts.find((h) => h.host.toLowerCase() === host.toLowerCase());
+    if (!match) return undefined;
+    return {
+      hostname: match.hostname ?? match.host,
+      port: match.port,
+      user: match.user,
+      identityFile: match.identityFile,
+      identityAgent: match.identityAgent,
+    };
+  } catch {
+    return undefined;
+  }
+}

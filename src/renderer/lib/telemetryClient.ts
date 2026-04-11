@@ -4,9 +4,9 @@
  */
 import { rpc } from '../core/ipc';
 
-export function captureTelemetry(event: string, properties?: Record<string, any>): void {
+export function captureTelemetry(event: string, properties?: Record<string, unknown>): void {
   try {
-    rpc.telemetry.capture({ event, properties });
+    void rpc.telemetry.capture({ event, properties });
   } catch {
     // Telemetry failures never break the app
   }

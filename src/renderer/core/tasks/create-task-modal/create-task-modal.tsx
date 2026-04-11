@@ -1,8 +1,10 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, FolderOpen } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useState } from 'react';
 import type { PullRequest } from '@shared/pull-requests';
 import { ProjectSelector } from '@renderer/components/project-selector';
+import { useProjectSettings } from '@renderer/components/projects/use-project-settings';
 import { AnimatedHeight } from '@renderer/components/ui/animated-height';
 import { ComboboxTrigger, ComboboxValue } from '@renderer/components/ui/combobox';
 import { ConfirmButton } from '@renderer/components/ui/confirm-button';
@@ -12,7 +14,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@renderer/components/ui/dialog';
+import { Switch } from '@renderer/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@renderer/components/ui/toggle-group';
+import { rpc } from '@renderer/core/ipc';
 import { BaseModalProps } from '@renderer/core/modal/modal-provider';
 import { useRepository } from '@renderer/core/projects/use-repository';
 import { appState } from '@renderer/core/stores/app-state';
@@ -21,6 +25,7 @@ import {
   mountedProjectData,
 } from '@renderer/core/stores/project-selectors';
 import { useNavigate } from '@renderer/core/view/navigation-provider';
+import { useFeatureFlag } from '@renderer/hooks/useFeatureFlag';
 import { useNameWithOwner } from '@renderer/hooks/useNameWithOwner';
 import { FromBranchContent } from './from-branch-content';
 import { FromIssueContent } from './from-issue-content';
@@ -73,6 +78,13 @@ export const CreateTaskModal = observer(function CreateTaskModal({
   const fromPR = useFromPullRequestMode(selectedProjectId, branches, defaultBranch, initialPR);
   const fromPrUnavailable = selectedStrategy === 'from-pull-request' && !nameWithOwner;
 
+  // Workspace provider feature flag + project settings
+  const workspaceProviderFlag = useFeatureFlag('workspace-provider');
+  const { settings: projectSettings } = useProjectSettings(selectedProjectId ?? '');
+  const hasWorkspaceProvider = workspaceProviderFlag && !!projectSettings?.workspaceProvider;
+  const [useRemoteWorkspace, setUseRemoteWorkspace] = useState(false);
+  const queryClient = useQueryClient();
+
   const activeMode = {
     'from-branch': fromBranch,
     'from-issue': fromIssue,
@@ -86,67 +98,124 @@ export const CreateTaskModal = observer(function CreateTaskModal({
     const projectStore = getProjectManagerStore().projects.get(selectedProjectId);
     if (projectStore?.state !== 'mounted') return;
 
-    switch (selectedStrategy) {
-      case 'from-branch':
-        if (!fromBranch.selectedBranch) return;
-        void projectStore.mountedProject!.taskManager.createTask({
-          id,
-          projectId: selectedProjectId,
-          name: fromBranch.taskName,
-          sourceBranch: {
-            branch: fromBranch.selectedBranch.branch,
-            remote: fromBranch.selectedBranch.remote,
-          },
-          strategy: fromBranch.createBranchAndWorktree
+    // Determine strategy: workspace-provider overrides other strategies
+    const resolveStrategy = () => {
+      if (useRemoteWorkspace && hasWorkspaceProvider) {
+        return { kind: 'workspace-provider' as const };
+      }
+
+      switch (selectedStrategy) {
+        case 'from-branch':
+          if (!fromBranch.selectedBranch) return undefined;
+          return fromBranch.createBranchAndWorktree
             ? {
-                kind: 'new-branch',
+                kind: 'new-branch' as const,
                 taskBranch: fromBranch.taskName,
                 pushBranch: fromBranch.pushBranch,
               }
-            : { kind: 'no-worktree' },
-        });
-        break;
-      case 'from-issue':
-        if (!fromIssue.selectedBranch) return;
-        void projectStore.mountedProject!.taskManager.createTask({
-          id,
-          projectId: selectedProjectId,
-          name: fromIssue.taskName,
-          sourceBranch: {
-            branch: fromIssue.selectedBranch.branch,
-            remote: fromIssue.selectedBranch.remote,
-          },
-          strategy: { kind: 'no-worktree' },
-          linkedIssue: fromIssue.linkedIssue ?? undefined,
-        });
-        break;
-      case 'from-pull-request':
-        if (!fromPR.linkedPR) return;
-        void projectStore.mountedProject!.taskManager.createTask({
-          id,
-          projectId: selectedProjectId,
-          name: fromPR.taskName,
-          sourceBranch: { branch: fromPR.linkedPR.metadata.headRefName },
-          strategy:
-            fromPR.checkoutMode === 'checkout'
-              ? {
-                  kind: 'from-pull-request',
-                  prNumber: fromPR.linkedPR.metadata.number,
-                  headBranch: fromPR.linkedPR.metadata.headRefName,
-                }
-              : {
-                  kind: 'from-pull-request',
-                  prNumber: fromPR.linkedPR.metadata.number,
-                  headBranch: fromPR.linkedPR.metadata.headRefName,
-                  taskBranch: fromPR.taskName,
-                },
-        });
-        break;
-    }
+            : { kind: 'no-worktree' as const };
+        case 'from-issue':
+          return { kind: 'no-worktree' as const };
+        case 'from-pull-request':
+          if (!fromPR.linkedPR) return undefined;
+          return fromPR.checkoutMode === 'checkout'
+            ? {
+                kind: 'from-pull-request' as const,
+                prNumber: fromPR.linkedPR.metadata.number,
+                headBranch: fromPR.linkedPR.metadata.headRefName,
+              }
+            : {
+                kind: 'from-pull-request' as const,
+                prNumber: fromPR.linkedPR.metadata.number,
+                headBranch: fromPR.linkedPR.metadata.headRefName,
+                taskBranch: fromPR.taskName,
+              };
+      }
+    };
 
+    const resolvedStrategy = resolveStrategy();
+    if (!resolvedStrategy) return;
+
+    const sourceBranch = (() => {
+      switch (selectedStrategy) {
+        case 'from-branch':
+          return fromBranch.selectedBranch
+            ? { branch: fromBranch.selectedBranch.branch, remote: fromBranch.selectedBranch.remote }
+            : { branch: defaultBranch?.name ?? 'main' };
+        case 'from-issue':
+          return fromIssue.selectedBranch
+            ? { branch: fromIssue.selectedBranch.branch, remote: fromIssue.selectedBranch.remote }
+            : { branch: defaultBranch?.name ?? 'main' };
+        case 'from-pull-request':
+          return fromPR.linkedPR
+            ? { branch: fromPR.linkedPR.metadata.headRefName }
+            : { branch: defaultBranch?.name ?? 'main' };
+      }
+    })();
+
+    const taskName =
+      selectedStrategy === 'from-branch'
+        ? fromBranch.taskName
+        : selectedStrategy === 'from-issue'
+          ? fromIssue.taskName
+          : fromPR.taskName;
+
+    // Navigate immediately for fast UX; the task manager will handle
+    // state transitions in the background.
     navigate('task', { projectId: selectedProjectId, taskId: id });
     onClose();
-  }, [selectedProjectId, selectedStrategy, fromBranch, fromIssue, fromPR, navigate, onClose]);
+
+    void (async () => {
+      try {
+        await projectStore.mountedProject!.taskManager.createTask({
+          id,
+          projectId: selectedProjectId,
+          name: taskName,
+          sourceBranch,
+          strategy: resolvedStrategy,
+          linkedIssue:
+            selectedStrategy === 'from-issue' ? (fromIssue.linkedIssue ?? undefined) : undefined,
+        });
+
+        // After task creation, trigger workspace provisioning if using remote workspace.
+        // Awaited so the workspace_instances row exists before downstream consumers query it.
+        if (useRemoteWorkspace && hasWorkspaceProvider && projectSettings?.workspaceProvider) {
+          const remotes = await rpc.repository.getRemotes(selectedProjectId);
+          const originRemote = remotes.find((r) => r.name === 'origin');
+          const repoUrl = originRemote?.url ?? remotes[0]?.url ?? '';
+          await rpc.workspaceProvider.provision({
+            taskId: id,
+            repoUrl,
+            branch: sourceBranch.branch,
+            baseRef: defaultBranch?.name ?? 'main',
+            provisionCommand: projectSettings.workspaceProvider.provisionCommand,
+            projectPath: projectData?.path ?? '',
+          });
+          // Main-panel.tsx mounted before provision returned — invalidate so its
+          // useWorkspaceInstance query picks up the newly-inserted instance row.
+          await queryClient.invalidateQueries({ queryKey: ['workspaceInstance', id] });
+        }
+      } catch (e) {
+        // Task manager surfaces errors via task store state; swallow here to
+        // avoid unhandled promise rejections.
+        console.error('Failed to create task:', e);
+      }
+    })();
+  }, [
+    selectedProjectId,
+    selectedStrategy,
+    fromBranch,
+    fromIssue,
+    fromPR,
+    navigate,
+    onClose,
+    useRemoteWorkspace,
+    hasWorkspaceProvider,
+    projectSettings,
+    projectData,
+    defaultBranch,
+    queryClient,
+  ]);
 
   return (
     <>
@@ -184,6 +253,24 @@ export const CreateTaskModal = observer(function CreateTaskModal({
             From Pull Request
           </ToggleGroupItem>
         </ToggleGroup>
+        {hasWorkspaceProvider && (
+          <div className="flex items-center justify-between rounded-md border border-border bg-background-1 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-foreground-muted">Use remote workspace</span>
+              <button
+                type="button"
+                onClick={() =>
+                  void rpc.app.openExternal('https://docs.emdash.sh/bring-your-own-infrastructure')
+                }
+                className="group inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <span className="transition-colors group-hover:text-foreground">Docs</span>
+                <span className="transition-colors group-hover:text-foreground">↗</span>
+              </button>
+            </div>
+            <Switch checked={useRemoteWorkspace} onCheckedChange={setUseRemoteWorkspace} />
+          </div>
+        )}
         <AnimatedHeight onAnimatingChange={setIsTransitioning}>
           {selectedStrategy === 'from-branch' && (
             <FromBranchContent state={fromBranch} branches={branches} />

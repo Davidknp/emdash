@@ -8,16 +8,21 @@ import { Task, type TaskBootstrapStatus } from '@shared/tasks';
 import { type Terminal } from '@shared/terminals';
 import { HookConfigWriter } from '@main/core/agent-hooks/hook-config';
 import { LocalConversationProvider } from '@main/core/conversations/impl/local-conversation';
+import { SshConversationProvider } from '@main/core/conversations/impl/ssh-conversation';
 import { LocalFileSystem } from '@main/core/fs/impl/local-fs';
+import { SshFileSystem } from '@main/core/fs/impl/ssh-fs';
 import type { FileSystemProvider } from '@main/core/fs/types';
 import { GitService } from '@main/core/git/impl/git-service';
 import { bareRefName } from '@main/core/git/impl/git-utils';
 import type { GitProvider } from '@main/core/git/types';
 import { githubAuthService } from '@main/core/github/services/github-auth-service';
 import { appSettingsService } from '@main/core/settings/settings-service';
+import { sshConnectionManager } from '@main/core/ssh/ssh-connection-manager';
 import { TaskLifecycleService } from '@main/core/tasks/task-lifecycle-service';
 import { LocalTerminalProvider } from '@main/core/terminals/impl/local-terminal-provider';
-import { getGitLocalExec } from '@main/core/utils/exec';
+import { SshTerminalProvider } from '@main/core/terminals/impl/ssh-terminal-provider';
+import { getGitLocalExec, getGitSshExec, getSshExec } from '@main/core/utils/exec';
+import { getActiveInstance } from '@main/core/workspace-provider/workspace-provider-service';
 import { log } from '@main/lib/logger';
 import type {
   ProjectProvider,
@@ -130,6 +135,13 @@ export class LocalProjectProvider implements ProjectProvider {
     log.debug('LocalProjectProvider: doProvisionTask START', {
       taskId: task.id,
     });
+
+    // BYOI workspace-provider tasks: build an SSH-backed TaskProvider instead
+    // of a local worktree. The workspace-provider-service has already
+    // provisioned the remote instance and created an ssh_connections row.
+    if (task.workspaceInstanceId) {
+      return this.provisionWorkspaceInstanceTask(task, conversations, terminals);
+    }
 
     let workDir: string;
 
@@ -284,6 +296,133 @@ export class LocalProjectProvider implements ProjectProvider {
 
     log.debug('LocalProjectProvider: doProvisionTask DONE', {
       taskId: task.id,
+    });
+    return taskEnv;
+  }
+
+  private async provisionWorkspaceInstanceTask(
+    task: Task,
+    conversations: Conversation[],
+    terminals: Terminal[]
+  ): Promise<TaskProvider> {
+    const instance = await getActiveInstance(task.id);
+    if (!instance || instance.status !== 'ready' || !instance.connectionId) {
+      throw new Error(`Workspace instance for task ${task.id} is not ready`);
+    }
+
+    const proxy = await sshConnectionManager.connect(instance.connectionId);
+    const workDir = instance.worktreePath ?? this.project.path;
+
+    const taskFs = new SshFileSystem(proxy, workDir);
+    const projectSettings = await this.settings.get();
+    const defaultBranch = await this.settings.getDefaultBranch();
+    const taskEnvVars = getTaskEnvVars({
+      taskId: task.id,
+      taskName: task.name,
+      taskPath: workDir,
+      projectPath: this.project.path,
+      defaultBranch,
+      portSeed: workDir,
+    });
+    const tmuxEnabled = projectSettings.tmux ?? false;
+
+    const taskLevelSettings = await getEffectiveTaskSettings({
+      projectSettings: this.settings,
+      taskFs,
+    });
+    const shellSetup = taskLevelSettings.shellSetup ?? projectSettings.shellSetup;
+    const scripts = taskLevelSettings.scripts;
+
+    const taskGitExec = getGitSshExec(proxy, () => githubAuthService.getToken());
+    const exec = getSshExec(proxy);
+    const taskGit = new GitService(workDir, taskGitExec, taskFs);
+    const conversationProvider = new SshConversationProvider({
+      projectId: this.project.id,
+      taskPath: workDir,
+      taskId: task.id,
+      tmux: tmuxEnabled,
+      shellSetup,
+      exec,
+      proxy,
+      taskEnvVars,
+    });
+
+    const terminalProvider = new SshTerminalProvider({
+      projectId: this.project.id,
+      taskId: task.id,
+      taskPath: workDir,
+      tmux: tmuxEnabled,
+      shellSetup,
+      exec,
+      proxy,
+      taskEnvVars,
+    });
+
+    const taskLifecycleService = new TaskLifecycleService({
+      projectId: this.project.id,
+      taskId: task.id,
+      terminals: terminalProvider,
+    });
+
+    const taskEnv: TaskProvider = {
+      taskId: task.id,
+      taskPath: workDir,
+      taskBranch: task.taskBranch,
+      sourceBranch: task.sourceBranch,
+      taskEnvVars,
+      fs: taskFs,
+      git: taskGit,
+      conversations: conversationProvider,
+      terminals: terminalProvider,
+      settings: this.settings,
+      lifecycleService: taskLifecycleService,
+    };
+
+    if (scripts?.setup) {
+      void taskLifecycleService.prepareAndRunLifecycleScript({
+        type: 'setup',
+        script: scripts.setup,
+      });
+    }
+    if (scripts?.run) {
+      void taskLifecycleService.prepareAndRunLifecycleScript({
+        type: 'run',
+        script: scripts.run,
+      });
+    }
+    if (scripts?.teardown) {
+      void taskLifecycleService.prepareLifecycleScript({
+        type: 'teardown',
+        script: scripts.teardown,
+      });
+    }
+
+    Promise.all(
+      terminals.map((term) =>
+        terminalProvider.spawnTerminal(term).catch((e) => {
+          log.error('LocalProjectProvider(workspace): failed to hydrate terminal', {
+            terminalId: term.id,
+            error: String(e),
+          });
+        })
+      )
+    );
+
+    Promise.all(
+      conversations.map((conv) =>
+        conversationProvider.startSession(conv, undefined, true).catch((e) => {
+          log.error('LocalProjectProvider(workspace): failed to hydrate conversation', {
+            conversationId: conv.id,
+            error: String(e),
+          });
+        })
+      )
+    );
+
+    log.debug('LocalProjectProvider: provisionWorkspaceInstanceTask DONE', {
+      taskId: task.id,
+      instanceId: instance.id,
+      host: instance.host,
     });
     return taskEnv;
   }
