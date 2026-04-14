@@ -28,6 +28,7 @@ import { telemetryController } from './core/telemetry/controller';
 import { terminalsController } from './core/terminals/controller';
 import { updateController } from './core/updates/controller';
 import { viewStateController } from './core/view-state/controller';
+import { workspaceProviderController } from './core/workspaces/controller';
 
 export const rpcRouter = createRPCRouter({
   account: accountController,
@@ -59,6 +60,7 @@ export const rpcRouter = createRPCRouter({
   telemetry: telemetryController,
   pullRequests: pullRequestController,
   viewState: viewStateController,
+  workspaceProvider: workspaceProviderController,
 });
 
 export type RpcRouter = typeof rpcRouter;

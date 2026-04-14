@@ -1,5 +1,6 @@
 import { makeObservable, observable, runInAction } from 'mobx';
 import { taskPrUpdatedChannel, taskStatusUpdatedChannel } from '@shared/events/taskEvents';
+import { workspaceProvisionStatusChannel } from '@shared/events/workspaceProviderEvents';
 import type { CreateTaskError, CreateTaskParams, Task, TaskLifecycleStatus } from '@shared/tasks';
 import type { TaskViewSnapshot } from '@shared/view-state';
 import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
@@ -30,6 +31,10 @@ function formatCreateTaskError(error: CreateTaskError): string {
       return `Could not fetch the pull request branch: ${error.message}`;
     case 'provision-failed':
       return `Task could not be provisioned: ${error.message}`;
+    case 'workspace-provider-not-configured':
+      return 'No workspace provider configured in project settings.';
+    case 'workspace-provider-feature-disabled':
+      return 'Workspace provider feature is not enabled.';
   }
 }
 
@@ -127,6 +132,14 @@ export class TaskManagerStore {
       }
     });
 
+    if (params.useWorkspaceProvider) {
+      // Workspace-provider tasks are provisioned asynchronously via the script runner
+      // in the main process. Don't call provisionTask yet — wait for the workspace
+      // instance to become ready, then provision.
+      this._listenForWorkspaceProvision(params.id);
+      return;
+    }
+
     await this.provisionTask(params.id);
   }
 
@@ -177,6 +190,28 @@ export class TaskManagerStore {
 
     this._provisionPromises.set(taskId, promise);
     return promise;
+  }
+
+  private _listenForWorkspaceProvision(taskId: string): void {
+    const unsub = events.on(
+      workspaceProvisionStatusChannel,
+      (data) => {
+        if (data.status === 'ready') {
+          unsub();
+          void this.provisionTask(taskId);
+        } else if (data.status === 'error') {
+          unsub();
+          runInAction(() => {
+            const task = this.tasks.get(taskId);
+            if (task && isUnprovisioned(task)) {
+              task.phase = 'provision-error';
+              task.errorMessage = data.errorMessage ?? 'Workspace provisioning failed';
+            }
+          });
+        }
+      },
+      taskId
+    );
   }
 
   async teardownTask(taskId: string): Promise<void> {

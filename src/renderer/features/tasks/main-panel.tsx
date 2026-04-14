@@ -1,5 +1,7 @@
 import { Loader2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
+import type { Task } from '@shared/tasks';
+import { isRegistered } from '@renderer/features/tasks/stores/task';
 import {
   getTaskStore,
   taskErrorMessage,
@@ -9,6 +11,8 @@ import { useProvisionedTask, useTaskViewContext } from '@renderer/features/tasks
 import { ConversationsPanel } from './conversations/conversations-panel';
 import { DiffView } from './diff-view/main-panel/diff-view';
 import { EditorMainPanel } from './editor/editor-main-panel';
+import { useWorkspaceInstance } from './hooks/use-workspace-instance';
+import { WorkspaceProvisioningOverlay } from './workspace-provisioning-overlay';
 
 export const TaskMainPanel = observer(function TaskMainPanel() {
   const { projectId, taskId } = useTaskViewContext();
@@ -38,6 +42,11 @@ export const TaskMainPanel = observer(function TaskMainPanel() {
   }
 
   if (kind === 'project-mounting' || kind === 'provisioning') {
+    const isWorkspaceProvider =
+      taskStore && isRegistered(taskStore) && (taskStore.data as Task).usesWorkspaceProvider;
+    if (isWorkspaceProvider) {
+      return <WorkspaceProvisioningView taskId={taskId} />;
+    }
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-3">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/50" />
@@ -47,6 +56,11 @@ export const TaskMainPanel = observer(function TaskMainPanel() {
   }
 
   if (kind === 'provision-error' || kind === 'project-error') {
+    const isWorkspaceProvider =
+      taskStore && isRegistered(taskStore) && (taskStore.data as Task).usesWorkspaceProvider;
+    if (isWorkspaceProvider) {
+      return <WorkspaceProvisioningView taskId={taskId} />;
+    }
     return (
       <div className="flex h-full w-full flex-col items-center justify-center p-8">
         <div className="flex max-w-xs flex-col items-center text-center gap-2">
@@ -90,6 +104,28 @@ export const TaskMainPanel = observer(function TaskMainPanel() {
   }
 
   return <ReadyTaskMainPanel />;
+});
+
+const WorkspaceProvisioningView = observer(function WorkspaceProvisioningView({
+  taskId,
+}: {
+  taskId: string;
+}) {
+  const { projectId } = useTaskViewContext();
+  const taskStore = getTaskStore(projectId, taskId);
+  const { data: instance, isLoading } = useWorkspaceInstance(taskId);
+  const taskError = taskStore?.errorMessage;
+
+  if (isLoading || !instance) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/50" />
+        <p className="text-xs font-mono text-muted-foreground/50">Preparing workspace…</p>
+      </div>
+    );
+  }
+
+  return <WorkspaceProvisioningOverlay taskId={taskId} instance={instance} taskError={taskError} />;
 });
 
 const ReadyTaskMainPanel = observer(function ReadyTaskMainPanel() {

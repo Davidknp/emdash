@@ -301,6 +301,11 @@ export class LocalProjectProvider implements ProjectProvider {
     return this.tasks.get(taskId);
   }
 
+  /** Register a task provider built externally (e.g. SSH-backed workspace-provider tasks). */
+  registerExternalTask(taskId: string, provider: TaskProvider): void {
+    this.tasks.set(taskId, provider);
+  }
+
   getTaskBootstrapStatus(taskId: string): TaskBootstrapStatus {
     if (this.tasks.has(taskId)) return { status: 'ready' };
     if (this.provisioningTasks.has(taskId)) return { status: 'bootstrapping' };

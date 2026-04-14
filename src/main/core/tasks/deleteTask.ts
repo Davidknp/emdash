@@ -1,6 +1,8 @@
 import { and, eq } from 'drizzle-orm';
+import { getProjectById } from '@main/core/projects/operations/getProjects';
 import { projectManager } from '@main/core/projects/project-manager';
 import { viewStateService } from '@main/core/view-state/view-state-service';
+import { terminate as terminateWorkspace } from '@main/core/workspaces/script-workspace-runner';
 import { db } from '@main/db/client';
 import { tasks } from '@main/db/schema';
 import { log } from '@main/lib/logger';
@@ -9,6 +11,27 @@ import { capture } from '@main/lib/telemetry';
 export async function deleteTask(projectId: string, taskId: string): Promise<void> {
   const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
   if (!task) return;
+
+  // Teardown workspace provider instance before deleting the task
+  if (task.usesWorkspaceProvider) {
+    try {
+      const projectData = await getProjectById(projectId);
+      const project = projectManager.getProject(projectId);
+      const projectSettings = project ? await project.settings.get() : undefined;
+      if (projectData && projectSettings) {
+        await terminateWorkspace({
+          taskId,
+          projectPath: projectData.path,
+          projectSettings,
+        });
+      }
+    } catch (e) {
+      log.warn('deleteTask: workspace provider teardown failed, continuing delete', {
+        taskId,
+        error: String(e),
+      });
+    }
+  }
 
   const project = projectManager.getProject(projectId);
 

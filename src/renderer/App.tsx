@@ -8,6 +8,7 @@ import { WorkspaceLayoutContextProvider } from './lib/layout/layout-provider';
 import { WorkspaceViewProvider } from './lib/layout/provider';
 import { ModalProvider } from './lib/modal/modal-provider';
 import { GithubContextProvider } from './lib/providers/github-context-provider';
+import { PostHogFeatureFlagProvider } from './lib/providers/posthog-feature-flag-provider';
 import { SshConnectionProvider } from './lib/providers/ssh-connection-provider';
 import { ThemeProvider } from './lib/providers/theme-provider';
 import { TerminalPoolProvider } from './lib/pty/pty-pool-provider';
@@ -29,27 +30,29 @@ export function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider delay={300}>
-        <ModalProvider>
-          <WorkspaceLayoutContextProvider>
-            <TerminalPoolProvider>
-              <SshConnectionProvider>
-                <GithubContextProvider>
-                  <IntegrationsProvider>
-                    <WorkspaceViewProvider>
-                      <RightSidebarProvider>
-                        <ThemeProvider>
-                          <ErrorBoundary>{renderContent()}</ErrorBoundary>
-                        </ThemeProvider>
-                      </RightSidebarProvider>
-                    </WorkspaceViewProvider>
-                  </IntegrationsProvider>
-                </GithubContextProvider>
-              </SshConnectionProvider>
-            </TerminalPoolProvider>
-          </WorkspaceLayoutContextProvider>
-        </ModalProvider>
-      </TooltipProvider>
+      <PostHogFeatureFlagProvider>
+        <TooltipProvider delay={300}>
+          <ModalProvider>
+            <WorkspaceLayoutContextProvider>
+              <TerminalPoolProvider>
+                <SshConnectionProvider>
+                  <GithubContextProvider>
+                    <IntegrationsProvider>
+                      <WorkspaceViewProvider>
+                        <RightSidebarProvider>
+                          <ThemeProvider>
+                            <ErrorBoundary>{renderContent()}</ErrorBoundary>
+                          </ThemeProvider>
+                        </RightSidebarProvider>
+                      </WorkspaceViewProvider>
+                    </IntegrationsProvider>
+                  </GithubContextProvider>
+                </SshConnectionProvider>
+              </TerminalPoolProvider>
+            </WorkspaceLayoutContextProvider>
+          </ModalProvider>
+        </TooltipProvider>
+      </PostHogFeatureFlagProvider>
     </QueryClientProvider>
   );
 }

@@ -16,6 +16,29 @@ export type Issue = {
   fetchedAt?: string;
 };
 
+export type WorkspaceInstanceStatus =
+  | 'provisioning'
+  | 'ready'
+  | 'terminating'
+  | 'terminated'
+  | 'error';
+
+export type WorkspaceInstance = {
+  id: string;
+  taskId: string;
+  status: WorkspaceInstanceStatus;
+  host: string | null;
+  port: number;
+  username: string | null;
+  worktreePath: string | null;
+  externalId: string | null;
+  errorMessage: string | null;
+  stderrLog: string | null;
+  createdAt: string;
+  readyAt: string | null;
+  terminatedAt: string | null;
+};
+
 export type Task = {
   id: string;
   projectId: string;
@@ -33,6 +56,8 @@ export type Task = {
   isPinned: boolean;
   prs: PullRequest[];
   conversations: Record<string, number>;
+  usesWorkspaceProvider?: boolean;
+  workspaceInstance?: WorkspaceInstance;
 };
 
 export type TaskBootstrapStatus =
@@ -66,6 +91,8 @@ export type CreateTaskParams = {
   /**  */
   initialConversation?: CreateConversationParams;
   initialStatus?: TaskLifecycleStatus;
+  /** If true, provision the task on a remote workspace using the project's workspaceProvider scripts */
+  useWorkspaceProvider?: boolean;
 };
 
 export type CreateTaskError =
@@ -75,7 +102,9 @@ export type CreateTaskError =
   | { type: 'invalid-base-branch'; branch: string }
   | { type: 'worktree-setup-failed'; message: string }
   | { type: 'pr-fetch-failed'; message: string }
-  | { type: 'provision-failed'; message: string };
+  | { type: 'provision-failed'; message: string }
+  | { type: 'workspace-provider-not-configured' }
+  | { type: 'workspace-provider-feature-disabled' };
 
 export type ProvisionTaskResult = {
   path: string;

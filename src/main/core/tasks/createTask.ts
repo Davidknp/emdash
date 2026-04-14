@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { err, ok, Result } from '@shared/result';
 import type { CreateTaskError, CreateTaskParams, Task } from '@shared/tasks';
 import { parseNameWithOwner } from '@main/core/github/services/utils';
+import { getProjectById } from '@main/core/projects/operations/getProjects';
 import { projectManager } from '@main/core/projects/project-manager';
 import { findPrForBranch, resolveInitialStatus } from '@main/core/task-status/pr-task-bridge';
 import { db } from '@main/db/client';
@@ -11,6 +12,7 @@ import { createConversation } from '../conversations/createConversation';
 import type { ProvisionTaskError } from '../projects/project-provider';
 import { prRowToPullRequest } from '../pull-requests/pr-utils';
 import { appSettingsService } from '../settings/settings-service';
+import { provision as provisionWorkspace } from '../workspaces/script-workspace-runner';
 import { mapTaskRowToTask } from './core';
 
 function mapProvisionError(error: ProvisionTaskError): CreateTaskError {
@@ -152,6 +154,18 @@ export async function createTask(params: CreateTaskParams): Promise<Result<Task,
     }
   }
 
+  // Workspace provider validation
+  const useWorkspaceProvider = params.useWorkspaceProvider ?? false;
+  if (useWorkspaceProvider) {
+    if (!projectSettings.workspaceProvider) {
+      return err({ type: 'workspace-provider-not-configured' });
+    }
+    const envOverride = process.env.EMDASH_FEATURE_WORKSPACE_PROVIDER;
+    if (envOverride !== '1' && envOverride !== 'true') {
+      return err({ type: 'workspace-provider-feature-disabled' });
+    }
+  }
+
   const [taskRow] = await db
     .insert(tasks)
     .values({
@@ -162,6 +176,7 @@ export async function createTask(params: CreateTaskParams): Promise<Result<Task,
       status: initialStatus,
       sourceBranch: dbSourceBranch,
       linkedIssue: params.linkedIssue ? JSON.stringify(params.linkedIssue) : null,
+      usesWorkspaceProvider: useWorkspaceProvider ? 1 : 0,
       updatedAt: sql`CURRENT_TIMESTAMP`,
       statusChangedAt: sql`CURRENT_TIMESTAMP`,
       lastInteractedAt: sql`CURRENT_TIMESTAMP`,
@@ -187,9 +202,29 @@ export async function createTask(params: CreateTaskParams): Promise<Result<Task,
 
   const task = mapTaskRowToTask(taskRow, linkedPrs);
 
-  const provisionResult = await project.provisionTask(task, [], []);
-  if (!provisionResult.success) {
-    return err(mapProvisionError(provisionResult.error));
+  if (useWorkspaceProvider) {
+    // Workspace provider tasks are provisioned asynchronously via the script runner.
+    // The renderer subscribes to progress events and handles the provisioning overlay.
+    // We fire-and-forget here so createTask returns immediately.
+    const projectData = await getProjectById(params.projectId);
+    if (!projectData) {
+      return err({ type: 'project-not-found' });
+    }
+    void provisionWorkspace({
+      taskId: task.id,
+      projectPath: projectData.path,
+      projectSettings,
+      remoteUrl: remoteUrl ?? null,
+      branch: taskBranch ?? dbSourceBranch,
+      baseRef: projectSettings.defaultBranch ?? 'main',
+    }).catch(() => {
+      // Error is already persisted in workspace_instances and emitted via events.
+    });
+  } else {
+    const provisionResult = await project.provisionTask(task, [], []);
+    if (!provisionResult.success) {
+      return err(mapProvisionError(provisionResult.error));
+    }
   }
 
   if (params.initialConversation) {

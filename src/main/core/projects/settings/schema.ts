@@ -25,6 +25,13 @@ export const projectSettingsSchema = z.object({
   worktreeDirectory: z.string().optional(),
   defaultBranch: z.string().optional(),
   remote: z.string().optional(),
+  workspaceProvider: z
+    .object({
+      type: z.literal('script'),
+      provisionCommand: z.string().min(1),
+      terminateCommand: z.string().min(1),
+    })
+    .optional(),
 });
 
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;

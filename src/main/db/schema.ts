@@ -95,9 +95,37 @@ export const tasks = sqliteTable(
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),
     isPinned: integer('is_pinned').notNull().default(0), // boolean, 0=false, 1=true
+    usesWorkspaceProvider: integer('uses_workspace_provider').notNull().default(0), // boolean, 0=false, 1=true
   },
   (table) => ({
     projectIdIdx: index('idx_tasks_project_id').on(table.projectId),
+  })
+);
+
+export const workspaceInstances = sqliteTable(
+  'workspace_instances',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .unique()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    externalId: text('external_id'), // provider-returned `id`, passed back on terminate
+    host: text('host'),
+    port: integer('port').notNull().default(22),
+    username: text('username'),
+    worktreePath: text('worktree_path'),
+    status: text('status').notNull().default('provisioning'), // 'provisioning' | 'ready' | 'terminating' | 'terminated' | 'error'
+    errorMessage: text('error_message'),
+    stderrLog: text('stderr_log'), // last 200 lines for retry/debug UX
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+    readyAt: text('ready_at'),
+    terminatedAt: text('terminated_at'),
+  },
+  (table) => ({
+    statusIdx: index('idx_workspace_instances_status').on(table.status),
   })
 );
 
@@ -346,6 +374,17 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
   }),
   conversations: many(conversations),
   lineComments: many(lineComments),
+  workspaceInstance: one(workspaceInstances, {
+    fields: [tasks.id],
+    references: [workspaceInstances.taskId],
+  }),
+}));
+
+export const workspaceInstancesRelations = relations(workspaceInstances, ({ one }) => ({
+  task: one(tasks, {
+    fields: [workspaceInstances.taskId],
+    references: [tasks.id],
+  }),
 }));
 
 export const conversationsRelations = relations(conversations, ({ one, many }) => ({
@@ -381,3 +420,5 @@ export type LineCommentRow = typeof lineComments.$inferSelect;
 export type LineCommentInsert = typeof lineComments.$inferInsert;
 export type EditorBufferRow = typeof editorBuffers.$inferSelect;
 export type EditorBufferInsert = typeof editorBuffers.$inferInsert;
+export type WorkspaceInstanceRow = typeof workspaceInstances.$inferSelect;
+export type WorkspaceInstanceInsert = typeof workspaceInstances.$inferInsert;

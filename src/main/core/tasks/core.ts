@@ -23,5 +23,6 @@ export function mapTaskRowToTask(
     updatedAt: row.updatedAt,
     statusChangedAt: row.statusChangedAt,
     isPinned: row.isPinned === 1,
+    usesWorkspaceProvider: row.usesWorkspaceProvider === 1 ? true : undefined,
   };
 }

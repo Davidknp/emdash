@@ -19,6 +19,7 @@ import { prService } from './core/pull-requests/pr-service';
 import { appSettingsService } from './core/settings/settings-service';
 import { onPrUpserted } from './core/task-status/pr-task-bridge';
 import { updateService } from './core/updates/update-service';
+import { reconcileOnStartup as reconcileWorkspaceInstances } from './core/workspaces/script-workspace-runner';
 import { initializeDatabase } from './db/initialize';
 import { log } from './lib/logger';
 import * as telemetry from './lib/telemetry';
@@ -109,6 +110,10 @@ app.whenReady().then(async () => {
 
   localDependencyManager.probeAll().catch((e) => {
     log.error('Failed to probe dependencies:', e);
+  });
+
+  reconcileWorkspaceInstances().catch((e) => {
+    log.warn('Failed to reconcile workspace instances on startup:', e);
   });
 
   setupAppProtocol(join(app.getAppPath(), 'out', 'renderer'));

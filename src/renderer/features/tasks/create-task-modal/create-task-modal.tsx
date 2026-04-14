@@ -1,4 +1,4 @@
-import { ChevronRight, FolderOpen } from 'lucide-react';
+import { ChevronRight, FolderOpen, Info, Server } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useState } from 'react';
 import type { PullRequest } from '@shared/pull-requests';
@@ -7,12 +7,16 @@ import {
   getProjectManagerStore,
   mountedProjectData,
 } from '@renderer/features/projects/stores/project-selectors';
+import { useProjectSettings } from '@renderer/features/projects/use-project-settings';
 import { ProjectSelector } from '@renderer/features/tasks/create-task-modal/project-selector';
+import { useFeatureFlag } from '@renderer/lib/hooks/useFeatureFlag';
 import { useNameWithOwner } from '@renderer/lib/hooks/useNameWithOwner';
+import { rpc } from '@renderer/lib/ipc';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { appState } from '@renderer/lib/stores/app-state';
 import { AnimatedHeight } from '@renderer/lib/ui/animated-height';
+import { Checkbox } from '@renderer/lib/ui/checkbox';
 import { ComboboxTrigger, ComboboxValue } from '@renderer/lib/ui/combobox';
 import { ConfirmButton } from '@renderer/lib/ui/confirm-button';
 import {
@@ -22,6 +26,7 @@ import {
   DialogTitle,
 } from '@renderer/lib/ui/dialog';
 import { ToggleGroup, ToggleGroupItem } from '@renderer/lib/ui/toggle-group';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { FromBranchContent } from './from-branch-content';
 import { FromIssueContent } from './from-issue-content';
 import { FromPrContent } from './from-pr-content';
@@ -59,6 +64,8 @@ export const CreateTaskModal = observer(function CreateTaskModal({
   });
   const [selectedStrategy, setSelectedStrategy] = useState<CreateTaskStrategy>(strategy);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [useWorkspaceProvider, setUseWorkspaceProvider] = useState(false);
+  const workspaceProviderEnabled = useFeatureFlag('workspace-provider');
   const { branches, defaultBranch } = useRepository(selectedProjectId);
   const { navigate } = useNavigate();
 
@@ -67,6 +74,7 @@ export const CreateTaskModal = observer(function CreateTaskModal({
     : null;
   const { data: remoteState } = useNameWithOwner(selectedProjectId);
   const nameWithOwner = remoteState?.status === 'ready' ? remoteState.nameWithOwner : undefined;
+  const { settings: projectSettings } = useProjectSettings(selectedProjectId ?? '');
 
   const fromBranch = useFromBranchMode(selectedProjectId, branches, defaultBranch);
   const fromIssue = useFromIssueMode(selectedProjectId, branches, defaultBranch);
@@ -104,6 +112,7 @@ export const CreateTaskModal = observer(function CreateTaskModal({
                 pushBranch: fromBranch.pushBranch,
               }
             : { kind: 'no-worktree' },
+          useWorkspaceProvider: useWorkspaceProvider || undefined,
         });
         break;
       case 'from-issue':
@@ -118,6 +127,7 @@ export const CreateTaskModal = observer(function CreateTaskModal({
           },
           strategy: { kind: 'no-worktree' },
           linkedIssue: fromIssue.linkedIssue ?? undefined,
+          useWorkspaceProvider: useWorkspaceProvider || undefined,
         });
         break;
       case 'from-pull-request':
@@ -142,13 +152,23 @@ export const CreateTaskModal = observer(function CreateTaskModal({
                   headBranch: fromPR.linkedPR.metadata.headRefName,
                   taskBranch: fromPR.taskName,
                 },
+          useWorkspaceProvider: useWorkspaceProvider || undefined,
         });
         break;
     }
 
     navigate('task', { projectId: selectedProjectId, taskId: id });
     onClose();
-  }, [selectedProjectId, selectedStrategy, fromBranch, fromIssue, fromPR, navigate, onClose]);
+  }, [
+    selectedProjectId,
+    selectedStrategy,
+    fromBranch,
+    fromIssue,
+    fromPR,
+    useWorkspaceProvider,
+    navigate,
+    onClose,
+  ]);
 
   return (
     <>
@@ -217,6 +237,32 @@ export const CreateTaskModal = observer(function CreateTaskModal({
             </div>
           )}
         </AnimatedHeight>
+        {workspaceProviderEnabled && projectSettings?.workspaceProvider && (
+          <div className="flex items-center justify-between border-t border-border pt-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox
+                checked={useWorkspaceProvider}
+                onCheckedChange={(checked) => setUseWorkspaceProvider(checked === true)}
+              />
+              <Server className="size-3.5 text-muted-foreground" />
+              <span className="text-sm">Run on remote workspace</span>
+            </label>
+            <Tooltip>
+              <TooltipTrigger
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void rpc.app.openExternal('https://docs.emdash.sh/bring-your-own-infrastructure');
+                }}
+              >
+                <Info className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipContent side="left">
+                Learn more about Bring Your Own Infrastructure
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
       </DialogContentArea>
       <DialogFooter>
         <ConfirmButton size="sm" onClick={handleCreateTask} disabled={!canCreate}>
