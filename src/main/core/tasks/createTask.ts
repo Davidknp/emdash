@@ -40,7 +40,8 @@ export async function createTask(params: CreateTaskParams): Promise<Result<Task,
     project.repository.getRemotes(),
     project.repository.getConfiguredRemote(),
   ]);
-  const canUseRemote = remotes.some((candidate) => candidate.name === remote);
+  const sourceRemote = sourceBranchRemote || remote;
+  const canUseRemote = remotes.some((candidate) => candidate.name === sourceRemote);
   const canUseRemoteBase = canUseRemote && !!sourceBranchRemote;
 
   // Determines what gets stored as taskBranch in the DB and how the worktree is prepared.
@@ -65,7 +66,7 @@ export async function createTask(params: CreateTaskParams): Promise<Result<Task,
         taskBranch,
         params.sourceBranch.branch,
         canUseRemoteBase,
-        remote
+        sourceRemote
       );
       if (!createResult.success) {
         switch (createResult.error.type) {

@@ -23,7 +23,8 @@ async function initRepo(dir: string, exec: ExecFn): Promise<void> {
 
 function makeSettings(
   preservePatterns: string[] = [],
-  defaultBranch = 'main'
+  defaultBranch = 'main',
+  remote = 'origin'
 ): ProjectSettingsProvider {
   return {
     get: async () => ({ preservePatterns }),
@@ -31,7 +32,7 @@ function makeSettings(
     ensure: async () => {},
     getWorktreeDirectory: async () => '',
     getDefaultBranch: async () => defaultBranch,
-    getRemote: async () => 'origin',
+    getRemote: async () => remote,
   } as ProjectSettingsProvider;
 }
 
@@ -190,6 +191,32 @@ describe('WorktreeService', () => {
       expect(fs.existsSync(reservePath)).toBe(true);
     });
 
+    it('resets stale reserve branches to the current source branch', async () => {
+      const svc = makeService();
+      await svc.ensureReserve('main');
+
+      const staleCommit = (
+        await exec('git', ['rev-parse', '_reserve-main'], { cwd: repoDir })
+      ).stdout.trim();
+      fs.writeFileSync(path.join(repoDir, 'changed.txt'), 'changed');
+      await exec('git', ['add', 'changed.txt'], { cwd: repoDir });
+      await exec('git', ['commit', '-m', 'advance main'], { cwd: repoDir });
+      const currentMain = (
+        await exec('git', ['rev-parse', 'main'], { cwd: repoDir })
+      ).stdout.trim();
+      expect(currentMain).not.toBe(staleCommit);
+
+      const reservePath = path.join(poolDir, '_reserve-main');
+      await exec('git', ['worktree', 'remove', '--force', reservePath], { cwd: repoDir });
+
+      await svc.ensureReserve('main');
+
+      const reserveCommit = (
+        await exec('git', ['rev-parse', '_reserve-main'], { cwd: repoDir })
+      ).stdout.trim();
+      expect(reserveCommit).toBe(currentMain);
+    });
+
     it('migrates reserve from old pool path to new pool path (pool path changed)', async () => {
       // Regression: previously failed with "already checked out at <old-path>" after the
       // worktree pool was reorganised to include a per-project subdirectory.
@@ -208,6 +235,27 @@ describe('WorktreeService', () => {
 
         expect(fs.existsSync(path.join(poolB, '_reserve-main'))).toBe(true);
         expect(fs.existsSync(path.join(poolA, '_reserve-main'))).toBe(false);
+      } finally {
+        fs.rmSync(poolA, { recursive: true, force: true });
+        fs.rmSync(poolB, { recursive: true, force: true });
+      }
+    });
+
+    it('recovers when a reserve is checked out at a corrupt old worktree path', async () => {
+      const poolA = fs.mkdtempSync(path.join(os.tmpdir(), 'wt-pool-a-'));
+      const poolB = fs.mkdtempSync(path.join(os.tmpdir(), 'wt-pool-b-'));
+
+      try {
+        const oldReservePath = path.join(poolA, '_reserve-main');
+        const newReservePath = path.join(poolB, '_reserve-main');
+        const svc1 = makeService({ worktreePoolPath: poolA });
+        await svc1.ensureReserve('main');
+        fs.rmSync(path.join(oldReservePath, '.git'), { force: true });
+
+        const svc2 = makeService({ worktreePoolPath: poolB });
+        await svc2.ensureReserve('main');
+
+        expect(fs.existsSync(newReservePath)).toBe(true);
       } finally {
         fs.rmSync(poolA, { recursive: true, force: true });
         fs.rmSync(poolB, { recursive: true, force: true });
@@ -415,6 +463,34 @@ describe('WorktreeService', () => {
       expect(result.success).toBe(false);
       if (result.success) throw new Error('expected failure');
       expect(result.error.type).toBe('reserve-failed');
+    });
+
+    it('can seed the reserve from a remote-only source branch on the configured remote', async () => {
+      await exec('git', ['update-ref', 'refs/remotes/origin/v1', 'HEAD'], { cwd: repoDir });
+      await exec('git', ['branch', 'task/remote-base', 'refs/remotes/origin/v1'], {
+        cwd: repoDir,
+      });
+
+      const svc = makeService();
+      const result = await svc.serveWorktree('v1', 'task/remote-base');
+
+      expect(result.success).toBe(true);
+      if (!result.success) throw new Error('expected success');
+      expect(fs.existsSync(result.data)).toBe(true);
+    });
+
+    it('can seed the reserve from another remote-tracking ref when the source remote is not configured', async () => {
+      await exec('git', ['update-ref', 'refs/remotes/upstream/v1', 'HEAD'], { cwd: repoDir });
+      await exec('git', ['branch', 'task/upstream-base', 'refs/remotes/upstream/v1'], {
+        cwd: repoDir,
+      });
+
+      const svc = makeService({ projectSettings: makeSettings([], 'main', 'origin') });
+      const result = await svc.serveWorktree('v1', 'task/upstream-base');
+
+      expect(result.success).toBe(true);
+      if (!result.success) throw new Error('expected success');
+      expect(fs.existsSync(result.data)).toBe(true);
     });
   });
 

@@ -97,46 +97,58 @@ export class WorktreeService {
     await this.ensureWorktreePoolDirExists();
     const reserveBranchName = createStableWorktreeReserveId(sourceBranch);
     const worktreePath = path.join(this.worktreePoolPath, reserveBranchName);
+    const sourceRef = await this.resolveSourceBaseRef(sourceBranch);
     // Check whether the reserve branch exists in git at all
     let branchExists = false;
     try {
       await this.exec('git', ['rev-parse', '--verify', reserveBranchName], { cwd: this.repoPath });
       branchExists = true;
     } catch {}
-    if (!branchExists) {
-      // Case 1: fresh — create the branch and worktree together.
-      // Use refs/heads/ prefix to avoid ambiguity when a tag exists with the same name.
-      const sourceRef = await this.resolveSourceBaseRef(sourceBranch);
-      await this.exec(
-        'git',
-        ['worktree', 'add', '-b', reserveBranchName, worktreePath, sourceRef],
-        { cwd: this.repoPath }
-      );
-      return;
+
+    if (branchExists) {
+      await this.removeReserveBranch(reserveBranchName);
     }
-    // Case 2 & 3: branch exists — try to re-add the worktree at the expected path.
-    // If the branch is already checked out at a different (stale) path, git will
-    // reject the add and tell us where it lives — move it instead.
-    try {
-      await this.exec('git', ['worktree', 'add', worktreePath, reserveBranchName], {
-        cwd: this.repoPath,
-      });
-    } catch (e: unknown) {
-      const stderr = (e as { stderr?: string })?.stderr ?? '';
-      const match = /already (?:checked out|used by worktree) at '(.+)'/.exec(stderr);
-      if (match?.[1]) {
-        // Case 3: branch is checked out at old/different path — move it to where we expect it
-        await this.exec('git', ['worktree', 'move', match[1], worktreePath], {
-          cwd: this.repoPath,
-        });
-      } else {
-        throw e;
-      }
-    }
+
+    await this.rootFs.remove(worktreePath, { recursive: true }).catch(() => {});
+    await this.exec('git', ['worktree', 'prune'], { cwd: this.repoPath }).catch(() => {});
+    await this.exec('git', ['worktree', 'add', '-b', reserveBranchName, worktreePath, sourceRef], {
+      cwd: this.repoPath,
+    });
   }
 
   private async ensureWorktreePoolDirExists(): Promise<void> {
     await this.rootFs.mkdir(this.worktreePoolPath, { recursive: true });
+  }
+
+  private async getWorktreePathForBranch(branchName: string): Promise<string | undefined> {
+    try {
+      const { stdout } = await this.exec('git', ['worktree', 'list', '--porcelain'], {
+        cwd: this.repoPath,
+      });
+      const branchLine = `branch refs/heads/${branchName}`;
+      for (const block of stdout.split('\n\n')) {
+        if (block.split('\n').some((line) => line === branchLine)) {
+          return /^worktree (.+)$/m.exec(block)?.[1];
+        }
+      }
+    } catch {}
+    return undefined;
+  }
+
+  private async removeReserveBranch(reserveBranchName: string): Promise<void> {
+    const existingPath = await this.getWorktreePathForBranch(reserveBranchName);
+    if (existingPath) {
+      const removed = await this.exec('git', ['worktree', 'remove', '--force', existingPath], {
+        cwd: this.repoPath,
+      })
+        .then(() => true)
+        .catch(() => false);
+      if (!removed) {
+        await this.rootFs.remove(existingPath, { recursive: true }).catch(() => {});
+      }
+      await this.exec('git', ['worktree', 'prune'], { cwd: this.repoPath }).catch(() => {});
+    }
+    await this.exec('git', ['branch', '-D', reserveBranchName], { cwd: this.repoPath });
   }
 
   private async getRemoteCandidates(): Promise<string[]> {
@@ -162,6 +174,21 @@ export class WorktreeService {
         await this.exec('git', ['rev-parse', '--verify', remoteRef], { cwd: this.repoPath });
         return remoteRef;
       } catch {}
+    }
+
+    try {
+      const { stdout } = await this.exec(
+        'git',
+        ['for-each-ref', '--format=%(refname)', 'refs/remotes'],
+        { cwd: this.repoPath }
+      );
+      const remoteMatch = stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .find((ref) => ref && !ref.endsWith('/HEAD') && ref.endsWith(`/${sourceBranch}`));
+      if (remoteMatch) return remoteMatch;
+    } catch {
+      // Fall through to the local ref so git returns the original invalid-base error.
     }
 
     return localRef;
