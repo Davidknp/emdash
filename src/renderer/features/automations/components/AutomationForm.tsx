@@ -4,7 +4,6 @@ import { Check, Clock, FileCode, FolderGit2, GitBranch, Zap } from 'lucide-react
 import React, { useState } from 'react';
 import { AGENT_PROVIDERS } from '@shared/agent-provider-registry';
 import type {
-  Automation,
   AutomationMode,
   AutomationSchedule,
   CreateAutomationInput,
@@ -12,7 +11,6 @@ import type {
   ScheduleType,
   TriggerConfig,
   TriggerType,
-  UpdateAutomationInput,
 } from '@shared/automations/types';
 import { ISSUE_PROVIDER_META } from '@renderer/features/integrations/issue-provider-meta';
 import AgentLogo from '@renderer/lib/components/agent-logo';
@@ -35,6 +33,7 @@ import {
 } from '@renderer/lib/ui/select';
 import { agentConfig } from '@renderer/utils/agentConfig';
 import { cn } from '@renderer/utils/utils';
+import { PromptInput } from './PromptInput';
 import { TRIGGER_TYPE_LABELS } from './utils';
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -48,12 +47,10 @@ const DAY_SHORT: Record<DayOfWeek, string> = {
   sun: 'Sun',
 };
 const TRIGGER_TYPES: TriggerType[] = [
-  'github_pr',
   'github_issue',
   'linear_issue',
   'jira_issue',
   'gitlab_issue',
-  'gitlab_mr',
   'forgejo_issue',
   'plain_thread',
 ];
@@ -116,8 +113,6 @@ type FormState = {
   dayOfMonth: number;
   triggerType: TriggerType;
   useWorktree: boolean;
-  labelFilter: string;
-  branchFilter: string;
   assigneeFilter: string;
 };
 
@@ -134,32 +129,8 @@ const DEFAULT_STATE: FormState = {
   dayOfMonth: 1,
   triggerType: 'github_issue',
   useWorktree: true,
-  labelFilter: '',
-  branchFilter: '',
   assigneeFilter: '',
 };
-
-function automationToState(automation: Automation): FormState {
-  const s = automation.schedule;
-  const tc = automation.triggerConfig;
-  return {
-    name: automation.name,
-    prompt: automation.prompt,
-    projectId: automation.projectId,
-    agentId: automation.agentId,
-    mode: automation.mode,
-    scheduleType: s.type,
-    hour: s.hour ?? 9,
-    minute: s.minute ?? 0,
-    dayOfWeek: s.dayOfWeek ?? 'mon',
-    dayOfMonth: s.dayOfMonth ?? 1,
-    triggerType: automation.triggerType ?? 'github_issue',
-    useWorktree: automation.useWorktree,
-    labelFilter: tc?.labelFilter?.join(', ') ?? '',
-    branchFilter: tc?.branchFilter ?? '',
-    assigneeFilter: tc?.assigneeFilter ?? '',
-  };
-}
 
 function seedToState(seed: Omit<CreateAutomationInput, 'projectId'>): FormState {
   const tc = seed.triggerConfig;
@@ -177,8 +148,6 @@ function seedToState(seed: Omit<CreateAutomationInput, 'projectId'>): FormState 
     dayOfMonth: s.dayOfMonth ?? DEFAULT_STATE.dayOfMonth,
     triggerType: seed.triggerType ?? DEFAULT_STATE.triggerType,
     useWorktree: seed.useWorktree ?? DEFAULT_STATE.useWorktree,
-    labelFilter: tc?.labelFilter?.join(', ') ?? '',
-    branchFilter: tc?.branchFilter ?? '',
     assigneeFilter: tc?.assigneeFilter ?? '',
   };
 }
@@ -194,13 +163,7 @@ function stateToSchedule(s: FormState): AutomationSchedule {
 }
 
 function stateToTriggerConfig(s: FormState): TriggerConfig | null {
-  const labels = s.labelFilter
-    .split(',')
-    .map((l) => l.trim())
-    .filter(Boolean);
   const config: TriggerConfig = {};
-  if (labels.length > 0) config.labelFilter = labels;
-  if (s.branchFilter.trim()) config.branchFilter = s.branchFilter.trim();
   if (s.assigneeFilter.trim()) config.assigneeFilter = s.assigneeFilter.trim();
   return Object.keys(config).length > 0 ? config : null;
 }
@@ -220,38 +183,20 @@ function scheduleLabel(s: FormState): string {
 }
 
 function triggerFilterCount(s: FormState): number {
-  let count = 0;
-  if (s.labelFilter.trim()) count++;
-  if (s.branchFilter.trim()) count++;
-  if (s.assigneeFilter.trim()) count++;
-  return count;
+  return s.assigneeFilter.trim() ? 1 : 0;
 }
 
-type CreateProps = {
-  mode: 'create';
+type Props = {
   onCreate: (input: CreateAutomationInput) => Promise<unknown>;
   onCancel: () => void;
   isSubmitting: boolean;
   initialSeed?: Omit<CreateAutomationInput, 'projectId'>;
 };
 
-type EditProps = {
-  mode: 'edit';
-  automation: Automation;
-  onUpdate: (input: UpdateAutomationInput) => Promise<unknown>;
-  onCancel: () => void;
-  isSubmitting: boolean;
-};
-
-type Props = CreateProps | EditProps;
-
 export const AutomationForm: React.FC<Props> = (props) => {
-  const isEdit = props.mode === 'edit';
-  const [form, setForm] = useState<FormState>(() => {
-    if (props.mode === 'edit') return automationToState(props.automation);
-    if (props.initialSeed) return seedToState(props.initialSeed);
-    return DEFAULT_STATE;
-  });
+  const [form, setForm] = useState<FormState>(() =>
+    props.initialSeed ? seedToState(props.initialSeed) : DEFAULT_STATE
+  );
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects', 'list'],
@@ -274,38 +219,23 @@ export const AutomationForm: React.FC<Props> = (props) => {
     const triggerConfig = form.mode === 'trigger' ? stateToTriggerConfig(form) : null;
 
     try {
-      if (isEdit) {
-        await props.onUpdate({
-          id: props.automation.id,
-          name: form.name.trim(),
-          projectId: form.projectId,
-          prompt: form.prompt.trim(),
-          agentId: form.agentId,
-          mode: form.mode,
-          schedule,
-          triggerType: form.mode === 'trigger' ? form.triggerType : null,
-          triggerConfig,
-          useWorktree: form.useWorktree,
-        });
-      } else {
-        const input: CreateAutomationInput = {
-          name: form.name.trim(),
-          projectId: form.projectId,
-          prompt: form.prompt.trim(),
-          agentId: form.agentId,
-          mode: form.mode,
-          schedule,
-          useWorktree: form.useWorktree,
-          ...(form.mode === 'trigger'
-            ? {
-                triggerType: form.triggerType,
-                ...(triggerConfig ? { triggerConfig } : {}),
-              }
-            : {}),
-        };
-        await props.onCreate(input);
-        setForm(DEFAULT_STATE);
-      }
+      const input: CreateAutomationInput = {
+        name: form.name.trim(),
+        projectId: form.projectId,
+        prompt: form.prompt.trim(),
+        agentId: form.agentId,
+        mode: form.mode,
+        schedule,
+        useWorktree: form.useWorktree,
+        ...(form.mode === 'trigger'
+          ? {
+              triggerType: form.triggerType,
+              ...(triggerConfig ? { triggerConfig } : {}),
+            }
+          : {}),
+      };
+      await props.onCreate(input);
+      setForm(DEFAULT_STATE);
     } catch {
       // toast handled in hook
     }
@@ -313,7 +243,7 @@ export const AutomationForm: React.FC<Props> = (props) => {
 
   const handleCancel = () => {
     props.onCancel();
-    if (!isEdit) setForm(DEFAULT_STATE);
+    setForm(DEFAULT_STATE);
   };
 
   const selectedAgent = agentConfig[form.agentId as keyof typeof agentConfig];
@@ -328,15 +258,14 @@ export const AutomationForm: React.FC<Props> = (props) => {
         placeholder="Automation title"
         className="w-full bg-transparent px-5 pt-5 pb-1 text-base font-medium placeholder:text-muted-foreground/60 focus:outline-none"
       />
-      <textarea
+      <PromptInput
         value={form.prompt}
-        onChange={(e) => patch('prompt', e.target.value)}
-        placeholder="Add prompt e.g. look for crashes in $sentry"
-        rows={5}
-        className="min-h-[120px] w-full resize-none bg-transparent px-5 pt-1 pb-4 text-sm placeholder:text-muted-foreground/60 focus:outline-none"
+        onValueChange={(v) => patch('prompt', v)}
+        placeholder="Add prompt e.g. triage new issues in $github"
+        minHeight={120}
       />
 
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 bg-background/30 px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 border-t border-border/60 bg-background/30 px-4 py-2.5">
         {/* Worktree <-> Direct toggle with swoosh */}
         <PillButton
           active={form.useWorktree}
@@ -424,6 +353,8 @@ export const AutomationForm: React.FC<Props> = (props) => {
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <div className="mx-1 h-4 w-px bg-border/60" aria-hidden="true" />
+
         {/* Mode toggle (Schedule <-> Trigger) with swoosh */}
         <PillButton
           onClick={() => patch('mode', form.mode === 'schedule' ? 'trigger' : 'schedule')}
@@ -473,7 +404,7 @@ export const AutomationForm: React.FC<Props> = (props) => {
           Cancel
         </Button>
         <Button size="sm" onClick={handleSubmit} disabled={!canSubmit}>
-          {props.isSubmitting ? (isEdit ? 'Saving…' : 'Creating…') : isEdit ? 'Save' : 'Create'}
+          {props.isSubmitting ? 'Creating…' : 'Create'}
         </Button>
       </div>
     </div>
@@ -739,22 +670,6 @@ function TriggerPopoverBody({
       <div className="border-t border-border/60" />
       <SectionHeader>Filters</SectionHeader>
       <div className="flex flex-col gap-2 px-3 pb-3">
-        <FieldRow label="Labels">
-          <Input
-            value={form.labelFilter}
-            onChange={(e) => patch('labelFilter', e.target.value)}
-            placeholder="bug, high-priority"
-            className="h-7 text-xs"
-          />
-        </FieldRow>
-        <FieldRow label="Branch">
-          <Input
-            value={form.branchFilter}
-            onChange={(e) => patch('branchFilter', e.target.value)}
-            placeholder="feature/*"
-            className="h-7 text-xs"
-          />
-        </FieldRow>
         <FieldRow label="Assignee">
           <Input
             value={form.assigneeFilter}
@@ -766,7 +681,7 @@ function TriggerPopoverBody({
       </div>
 
       <div className="border-t border-border/60 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
-        Polls every 60s · new items trigger a run
+        Polls every 60s · new items trigger a run · assignee filter only for now
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { FolderPlus, MessageSquareShare, Plug, Puzzle, Settings, Zap } from 'lucide-react';
+import { Clock, FolderPlus, MessageSquareShare, Plug, Puzzle, Settings } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React from 'react';
 import {
@@ -83,7 +83,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
               aria-label="Automations"
               className="w-full justify-start"
             >
-              <Zap className="h-5 w-5 sm:h-4 sm:w-4" />
+              <Clock className="h-5 w-5 sm:h-4 sm:w-4" />
               Automations
             </SidebarMenuButton>
             <SidebarMenuButton

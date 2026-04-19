@@ -1,10 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Loader2, Plus, Sparkles } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import { Loader2, Plus } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { Automation } from '@shared/automations/types';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Button } from '@renderer/lib/ui/button';
 import { TooltipProvider } from '@renderer/lib/ui/tooltip';
+import { AutomationEditor } from './AutomationEditor';
 import { AutomationRow } from './AutomationRow';
 import { AutomationTemplates, type AutomationTemplate } from './AutomationTemplates';
 import { useAutomations } from './useAutomations';
@@ -23,26 +24,20 @@ export const AutomationsView: React.FC = () => {
   const showConfirmModal = useShowModal('confirmActionModal');
   const showAutomationFormModal = useShowModal('automationFormModal');
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [isExploreOpen, setIsExploreOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const openCreateModal = (template?: AutomationTemplate) => {
     showAutomationFormModal({
-      mode: 'create',
       initialSeed: template?.seed,
       onCreate: (input) => createAutomation(input),
     });
   };
 
-  const openEditModal = (automation: Automation) => {
-    showAutomationFormModal({
-      mode: 'edit',
-      automation,
-      onUpdate: (input) => updateAutomation(input),
-    });
+  const openEditor = (automation: Automation) => {
+    setEditingId(automation.id);
   };
 
   const handlePickTemplate = (template: AutomationTemplate) => {
-    setIsExploreOpen(false);
     openCreateModal(template);
   };
 
@@ -54,6 +49,10 @@ export const AutomationsView: React.FC = () => {
       setBusyId(null);
     }
   };
+
+  useEffect(() => {
+    if (editingId && !automations.some((a) => a.id === editingId)) setEditingId(null);
+  }, [editingId, automations]);
 
   const { activeAutomations, pausedAutomations } = useMemo(() => {
     const active = automations.filter((a) => a.status !== 'paused');
@@ -69,9 +68,56 @@ export const AutomationsView: React.FC = () => {
     );
   }
 
-  return (
-    <TooltipProvider delay={200}>
-      <div
+  const editingAutomation = editingId ? automations.find((a) => a.id === editingId) : undefined;
+
+  const transition = { duration: 0.18, ease: [0.4, 0, 0.2, 1] as const };
+  const fadeSlide = {
+    initial: { opacity: 0, y: 4 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -4 },
+  };
+
+  let content: React.ReactNode;
+  if (editingAutomation) {
+    content = (
+      <motion.div
+        key={`edit-${editingAutomation.id}`}
+        {...fadeSlide}
+        transition={transition}
+        className="h-full"
+      >
+        <AutomationEditor
+          automation={editingAutomation}
+          onBack={() => setEditingId(null)}
+          onUpdate={(input) => updateAutomation(input)}
+          onToggle={() =>
+            withBusy(editingAutomation.id, () => toggleAutomation(editingAutomation.id))
+          }
+          onTriggerNow={() =>
+            withBusy(editingAutomation.id, () => triggerNow(editingAutomation.id))
+          }
+          onDelete={() =>
+            showConfirmModal({
+              title: 'Delete automation?',
+              description: `"${editingAutomation.name}" will be removed along with its run history. This cannot be undone.`,
+              confirmLabel: 'Delete',
+              variant: 'destructive',
+              onSuccess: () => {
+                setEditingId(null);
+                void withBusy(editingAutomation.id, () => deleteAutomation(editingAutomation.id));
+              },
+            })
+          }
+          isBusy={busyId === editingAutomation.id}
+        />
+      </motion.div>
+    );
+  } else {
+    content = (
+      <motion.div
+        key="list"
+        {...fadeSlide}
+        transition={transition}
         className="flex h-full flex-col overflow-y-auto bg-background text-foreground"
         style={{ scrollbarGutter: 'stable' }}
       >
@@ -85,17 +131,6 @@ export const AutomationsView: React.FC = () => {
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {automations.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsExploreOpen((v) => !v)}
-                  aria-pressed={isExploreOpen}
-                >
-                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-                  {isExploreOpen ? 'Hide examples' : 'Explore automations'}
-                </Button>
-              )}
               <Button variant="outline" size="sm" onClick={() => openCreateModal()}>
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
                 New Automation
@@ -107,20 +142,6 @@ export const AutomationsView: React.FC = () => {
             <AutomationTemplates onPick={handlePickTemplate} />
           ) : (
             <div className="space-y-6">
-              <AnimatePresence initial={false}>
-                {isExploreOpen && (
-                  <motion.div
-                    key="explore"
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                    className="overflow-hidden"
-                  >
-                    <AutomationTemplates onPick={handlePickTemplate} />
-                  </motion.div>
-                )}
-              </AnimatePresence>
               {activeAutomations.length > 0 && (
                 <Section label="Active" count={activeAutomations.length}>
                   {activeAutomations.map((automation) => (
@@ -148,7 +169,7 @@ export const AutomationsView: React.FC = () => {
                           automationName: automation.name,
                         })
                       }
-                      onEdit={() => openEditModal(automation)}
+                      onEdit={() => openEditor(automation)}
                     />
                   ))}
                 </Section>
@@ -181,7 +202,7 @@ export const AutomationsView: React.FC = () => {
                           automationName: automation.name,
                         })
                       }
-                      onEdit={() => openEditModal(automation)}
+                      onEdit={() => openEditor(automation)}
                     />
                   ))}
                 </Section>
@@ -189,7 +210,15 @@ export const AutomationsView: React.FC = () => {
             </div>
           )}
         </div>
-      </div>
+      </motion.div>
+    );
+  }
+
+  return (
+    <TooltipProvider delay={200}>
+      <AnimatePresence mode="wait" initial={false}>
+        {content}
+      </AnimatePresence>
     </TooltipProvider>
   );
 };

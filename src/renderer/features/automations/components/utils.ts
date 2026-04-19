@@ -44,18 +44,29 @@ export function describeTrigger(triggerType: TriggerType | null): string {
   return TRIGGER_TYPE_LABELS[triggerType];
 }
 
+function formatDurationFromMs(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  if (Math.abs(seconds) < 60) return `${Math.abs(seconds)}s`;
+  const minutes = Math.round(seconds / 60);
+  if (Math.abs(minutes) < 60) return `${Math.abs(minutes)}m`;
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 24) return `${Math.abs(hours)}h`;
+  const days = Math.round(hours / 24);
+  return `${Math.abs(days)}d`;
+}
+
 export function formatRelative(iso: string | null): string {
   if (!iso) return 'never';
   const then = new Date(iso).getTime();
-  const diff = Date.now() - then;
-  const seconds = Math.round(diff / 1000);
-  if (Math.abs(seconds) < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  if (Math.abs(minutes) < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (Math.abs(hours) < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return `${days}d ago`;
+  return `${formatDurationFromMs(Date.now() - then)} ago`;
+}
+
+export function formatRelativeFuture(iso: string | null): string {
+  if (!iso) return 'never';
+  const then = new Date(iso).getTime();
+  const diff = then - Date.now();
+  if (diff <= 0) return 'now';
+  return `in ${formatDurationFromMs(diff)}`;
 }
 
 export function formatDateTime(iso: string | null): string {

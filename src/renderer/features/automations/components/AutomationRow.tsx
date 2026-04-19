@@ -1,14 +1,4 @@
-import {
-  Clock,
-  History,
-  Loader2,
-  MessageSquare,
-  Pause,
-  Pencil,
-  Play,
-  Trash2,
-  Zap,
-} from 'lucide-react';
+import { Clock, History, Loader2, MessageSquare, Pause, Play, Trash2, Zap } from 'lucide-react';
 import React from 'react';
 import type { Automation, TriggerType } from '@shared/automations/types';
 import { ISSUE_PROVIDER_META } from '@renderer/features/integrations/issue-provider-meta';
@@ -16,7 +6,7 @@ import { Button } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { cn } from '@renderer/utils/utils';
 import { useIsAutomationRunning } from './useAutomations';
-import { describeSchedule, describeTrigger, formatRelative } from './utils';
+import { describeSchedule, describeTrigger, formatRelative, formatRelativeFuture } from './utils';
 
 type Props = {
   automation: Automation;
@@ -95,15 +85,33 @@ export const AutomationRow: React.FC<Props> = ({
       ? describeSchedule(automation.schedule)
       : describeTrigger(automation.triggerType);
 
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={onEdit}
+      onKeyDown={(e) => {
+        if (e.currentTarget !== e.target) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onEdit();
+        }
+      }}
       className={cn(
-        'group rounded-lg border border-border bg-muted/20 p-4 shadow-sm transition-all hover:bg-muted/40 hover:shadow-md',
+        'group cursor-pointer rounded-lg border border-border bg-muted/20 px-3 py-2.5 shadow-sm transition-all hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
         isPaused && !busy && !isRunning && 'opacity-60',
         isRunning && 'border-blue-500/30 bg-blue-500/[0.04]'
       )}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
+        <div className="shrink-0 flex h-8 w-8 items-center justify-center rounded-md bg-muted/60 text-muted-foreground">
+          {automation.mode === 'trigger' && automation.triggerType ? (
+            <TriggerIcon triggerType={automation.triggerType} className="h-4 w-4" />
+          ) : (
+            <Clock className="h-4 w-4" />
+          )}
+        </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             <h3 className="text-sm font-medium truncate">{automation.name}</h3>
@@ -111,40 +119,32 @@ export const AutomationRow: React.FC<Props> = ({
               <StatusLabel automation={automation} isRunning={isRunning} />
             </span>
           </div>
-          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground/80 min-w-0">
             <span className="truncate">{automation.projectName || automation.projectId}</span>
             <span className="text-muted-foreground/40">·</span>
-            <span>{automation.agentId}</span>
-          </div>
-          <p className="mt-2 text-xs text-foreground-muted line-clamp-2 leading-relaxed">
-            {automation.prompt}
-          </p>
-          <div className="mt-2.5 flex items-center gap-3 text-xs text-muted-foreground/80">
-            <span className="inline-flex items-center gap-1.5">
-              {automation.mode === 'trigger' && automation.triggerType ? (
-                <TriggerIcon triggerType={automation.triggerType} className="h-3 w-3" />
-              ) : (
-                <Clock className="h-3 w-3" />
-              )}
-              {cadence}
-            </span>
+            <span className="shrink-0">{automation.agentId}</span>
+            <span className="text-muted-foreground/40">·</span>
+            <span className="shrink-0 truncate">{cadence}</span>
             <span className="text-muted-foreground/40">·</span>
             <button
               type="button"
-              onClick={onShowLogs}
-              className="tabular-nums hover:text-foreground transition-colors"
+              onClick={(e) => {
+                stop(e);
+                onShowLogs();
+              }}
+              className="shrink-0 tabular-nums hover:text-foreground transition-colors"
             >
               {automation.runCount} {automation.runCount === 1 ? 'run' : 'runs'}
             </button>
             <span className="text-muted-foreground/40">·</span>
-            <span className="tabular-nums">
+            <span className="shrink-0 tabular-nums">
               {automation.mode === 'schedule' && !isPaused
-                ? `next ${formatRelative(automation.nextRunAt)}`
+                ? `next ${formatRelativeFuture(automation.nextRunAt)}`
                 : `last ${formatRelative(automation.lastRunAt)}`}
             </span>
           </div>
           {automation.lastRunError && (
-            <p className="mt-2 text-xs text-destructive/80 truncate">{automation.lastRunError}</p>
+            <p className="mt-1 text-xs text-destructive/80 truncate">{automation.lastRunError}</p>
           )}
         </div>
 
@@ -155,7 +155,10 @@ export const AutomationRow: React.FC<Props> = ({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={onTriggerNow}
+                  onClick={(e) => {
+                    stop(e);
+                    onTriggerNow();
+                  }}
                   disabled={busy}
                   aria-label="Run now"
                 >
@@ -170,7 +173,10 @@ export const AutomationRow: React.FC<Props> = ({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={onToggle}
+                onClick={(e) => {
+                  stop(e);
+                  onToggle();
+                }}
                 disabled={busy}
                 aria-label={isPaused ? 'Resume' : 'Pause'}
               >
@@ -184,7 +190,10 @@ export const AutomationRow: React.FC<Props> = ({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={onShowLogs}
+                onClick={(e) => {
+                  stop(e);
+                  onShowLogs();
+                }}
                 aria-label="View run logs"
               >
                 <History className="h-4 w-4" />
@@ -197,21 +206,10 @@ export const AutomationRow: React.FC<Props> = ({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={onEdit}
-                disabled={busy}
-                aria-label="Edit"
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Edit</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={onDelete}
+                onClick={(e) => {
+                  stop(e);
+                  onDelete();
+                }}
                 disabled={busy}
                 aria-label="Delete"
                 className="text-muted-foreground hover:text-destructive"
