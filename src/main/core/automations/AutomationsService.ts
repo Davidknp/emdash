@@ -32,6 +32,33 @@ import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 
 // ---------------------------------------------------------------------------
+// Prompt mention expansion ($github, $linear, …)
+// ---------------------------------------------------------------------------
+
+const MENTION_HINTS: Record<string, string> = {
+  github:
+    'GitHub — use the gh CLI or connected GitHub integration for issues, PRs, and repo context.',
+  linear: 'Linear — use the connected Linear integration to read and update tickets.',
+  jira: 'Jira — use the connected Jira integration to read and update issues.',
+  gitlab: 'GitLab — use the glab CLI or connected GitLab integration for issues and MRs.',
+  forgejo: 'Forgejo — use the connected Forgejo integration for issues and PRs.',
+  plain: 'Plain — use the connected Plain integration to read and reply to customer threads.',
+};
+
+const MENTION_SCAN_REGEX = /\$([a-zA-Z][a-zA-Z0-9_-]*)/g;
+
+function expandMentionsInPrompt(prompt: string): string {
+  const seen = new Set<string>();
+  for (const match of prompt.matchAll(MENTION_SCAN_REGEX)) {
+    const token = match[1].toLowerCase();
+    if (MENTION_HINTS[token]) seen.add(token);
+  }
+  if (seen.size === 0) return prompt;
+  const lines = [...seen].map((token) => `- $${token} → ${MENTION_HINTS[token]}`);
+  return `${prompt}\n\n---\nReferenced integrations:\n${lines.join('\n')}`;
+}
+
+// ---------------------------------------------------------------------------
 // RawEvent shape returned by fetchers
 // ---------------------------------------------------------------------------
 
@@ -78,6 +105,14 @@ const DAY_ORDER: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 const VALID_SCHEDULE_TYPES: ScheduleType[] = ['hourly', 'daily', 'weekly', 'monthly'];
 const VALID_AUTOMATION_STATUS: Automation['status'][] = ['active', 'paused', 'error'];
 const VALID_RUN_STATUS: AutomationRunLog['status'][] = ['running', 'success', 'failure'];
+const SUPPORTED_TRIGGER_TYPES: TriggerType[] = [
+  'github_issue',
+  'linear_issue',
+  'jira_issue',
+  'gitlab_issue',
+  'forgejo_issue',
+  'plain_thread',
+];
 
 const MAX_RUNS_PER_AUTOMATION = 100;
 const MAX_TOTAL_RUNS = 2000;
@@ -188,6 +223,16 @@ function normalizeTriggerType(value: unknown): TriggerType | null {
     return value as TriggerType;
   }
   return null;
+}
+
+function isSupportedTriggerType(triggerType: TriggerType): boolean {
+  return SUPPORTED_TRIGGER_TYPES.includes(triggerType);
+}
+
+function assertSupportedTriggerType(triggerType: TriggerType): void {
+  if (!isSupportedTriggerType(triggerType)) {
+    throw new Error(`Trigger type not supported yet: ${triggerType}`);
+  }
 }
 
 function serializeSchedule(schedule: AutomationSchedule): string {
@@ -548,25 +593,8 @@ class AutomationsService {
   private matchesTriggerFilters(event: RawEvent, config: TriggerConfig | null): boolean {
     if (!config) return true;
 
-    if (config.labelFilter && config.labelFilter.length > 0) {
-      if (!event.labels || event.labels.length === 0) return false;
-      const hasMatch = config.labelFilter.some((f) =>
-        event.labels!.some((l) => l.toLowerCase() === f.toLowerCase())
-      );
-      if (!hasMatch) return false;
-    }
-
-    if (config.branchFilter) {
-      if (!event.branch) return false;
-      const pattern = config.branchFilter;
-      if (pattern.includes('*')) {
-        const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-        if (!new RegExp('^' + escaped + '$').test(event.branch)) return false;
-      } else if (event.branch !== pattern) {
-        return false;
-      }
-    }
-
+    // Current v1 issue-provider adapters only expose assignee data consistently.
+    // Ignore legacy label/branch filters instead of silently preventing all runs.
     if (config.assigneeFilter) {
       if (!event.assignee) return false;
       if (event.assignee.toLowerCase() !== config.assigneeFilter.toLowerCase()) return false;
@@ -577,6 +605,11 @@ class AutomationsService {
 
   private async fetchRawEvents(automation: Automation): Promise<RawEvent[]> {
     if (!automation.triggerType) return [];
+
+    if (!isSupportedTriggerType(automation.triggerType)) {
+      log.warn(`[Automations] Trigger type not supported yet: ${automation.triggerType}`);
+      return [];
+    }
 
     const providerType = this.resolveIssueProviderType(automation.triggerType);
     if (!providerType) {
@@ -727,7 +760,7 @@ class AutomationsService {
           taskId,
           provider: providerId,
           title: automation.name,
-          initialPrompt: automation.prompt,
+          initialPrompt: expandMentionsInPrompt(automation.prompt),
           autoApprove: true,
         },
       });
@@ -916,6 +949,9 @@ class AutomationsService {
     if (mode === 'trigger' && !input.triggerType) {
       throw new Error('triggerType is required when mode is "trigger"');
     }
+    if (mode === 'trigger' && input.triggerType) {
+      assertSupportedTriggerType(input.triggerType);
+    }
 
     const project = await getProjectById(input.projectId);
     if (!project) throw new Error(`Project not found: ${input.projectId}`);
@@ -1003,24 +1039,40 @@ class AutomationsService {
     const nextSchedule = input.schedule ?? current.schedule;
     const nextUpdatedAt = new Date().toISOString();
     const isTrigger = nextMode === 'trigger';
+    const nextProjectId = input.projectId ?? current.projectId;
+    const projectChanged = nextProjectId !== current.projectId;
+    const nextProject = projectChanged ? await getProjectById(nextProjectId) : null;
+
+    if (projectChanged && !nextProject) {
+      throw new Error(`Project not found: ${nextProjectId}`);
+    }
+
+    const nextTriggerType =
+      input.triggerType !== undefined ? input.triggerType : isTrigger ? current.triggerType : null;
+
+    if (isTrigger && !nextTriggerType) {
+      throw new Error('triggerType is required when mode is "trigger"');
+    }
+    const shouldValidateTriggerType =
+      nextTriggerType !== null &&
+      (nextTriggerType !== current.triggerType || current.mode !== 'trigger');
+
+    if (shouldValidateTriggerType && nextTriggerType) {
+      assertSupportedTriggerType(nextTriggerType);
+    }
 
     const updated: Automation = {
       ...current,
       name: input.name ?? current.name,
-      projectId: input.projectId ?? current.projectId,
-      projectName: input.projectName ?? current.projectName,
+      projectId: nextProjectId,
+      projectName: input.projectName ?? nextProject?.name ?? current.projectName,
       prompt: input.prompt ?? current.prompt,
       agentId: input.agentId ?? current.agentId,
       mode: nextMode,
       status: input.status ?? current.status,
       useWorktree: input.useWorktree ?? current.useWorktree,
       schedule: nextSchedule,
-      triggerType:
-        input.triggerType !== undefined
-          ? input.triggerType
-          : isTrigger
-            ? current.triggerType
-            : null,
+      triggerType: nextTriggerType,
       triggerConfig:
         input.triggerConfig !== undefined
           ? input.triggerConfig
@@ -1061,12 +1113,9 @@ class AutomationsService {
       (input.triggerType !== undefined || input.mode === 'trigger') &&
       updated.triggerType !== current.triggerType;
     const switchedToTrigger = input.mode === 'trigger' && current.mode !== 'trigger';
-    const projectChanged =
-      updated.mode === 'trigger' &&
-      input.projectId !== undefined &&
-      input.projectId !== current.projectId;
+    const triggerProjectChanged = updated.mode === 'trigger' && projectChanged;
 
-    if (triggerTypeChanged || switchedToTrigger || projectChanged) {
+    if (triggerTypeChanged || switchedToTrigger || triggerProjectChanged) {
       this.knownEventIds.delete(updated.id);
       void this.seedAutomationEvents(updated);
     }
