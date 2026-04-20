@@ -1,3 +1,5 @@
+import { AutomationFormModal } from '@renderer/features/automations/components/AutomationFormModal';
+import { RunLogsModal } from '@renderer/features/automations/components/RunLogsModal';
 import { IntegrationSetupModal } from '@renderer/features/integrations/integration-setup-modal';
 import { McpModal } from '@renderer/features/mcp/components/McpModal';
 import { AddProjectModal } from '@renderer/features/projects/components/add-project-modal/add-project-modal';
@@ -44,4 +46,9 @@ export const modalRegistry = {
   renameTaskModal: { component: RenameTaskModal, popupClassName: 'sm:max-w-xs' },
   integrationSetupModal: { component: IntegrationSetupModal, popupClassName: 'max-w-md' },
   addRemoteModal: { component: AddRemoteModal },
+  runLogsModal: { component: RunLogsModal, popupClassName: 'max-w-2xl' },
+  automationFormModal: {
+    component: AutomationFormModal,
+    popupClassName: 'gap-0 p-0 sm:max-w-2xl',
+  },
 } satisfies Record<string, ModalRegistryEntry>;
