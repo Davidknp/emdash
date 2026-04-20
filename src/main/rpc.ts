@@ -19,6 +19,7 @@ import { projectController } from './core/projects/controller';
 import { ptyController } from './core/pty/controller';
 import { pullRequestController } from './core/pull-requests/controller';
 import { repositoryController } from './core/repository/controller';
+import { resourceMonitorController } from './core/resource-monitor/controller';
 import { appSettingsController } from './core/settings/controller';
 import { providerSettingsController } from './core/settings/provider-settings-controller';
 import { skillsController } from './core/skills/controller';
@@ -38,6 +39,7 @@ export const rpcRouter = createRPCRouter({
   fs: filesController,
   update: updateController,
   pty: ptyController,
+  resourceMonitor: resourceMonitorController,
   forgejo: forgejoController,
   github: githubController,
   gitlab: gitlabController,
