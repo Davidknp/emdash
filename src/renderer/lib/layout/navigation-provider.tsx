@@ -1,6 +1,12 @@
 import { ComponentType, createContext, useCallback, useContext, type ReactNode } from 'react';
 import type { ViewId, WrapParams } from '@renderer/app/view-registry';
 
+export type AuxiliaryTopLevelView = 'settings' | 'skills' | 'mcp';
+
+export function isAuxiliaryTopLevelView(viewId: ViewId): viewId is AuxiliaryTopLevelView {
+  return viewId === 'settings' || viewId === 'skills' || viewId === 'mcp';
+}
+
 /**
  * NavArgs makes the params argument optional when all fields are optional,
  * and omits it entirely for views with no params (home, skills).
@@ -24,7 +30,7 @@ export type SlotsContextValue = {
   TitlebarSlot: ComponentType;
   MainPanel: ComponentType;
   RightPanel: ComponentType | null;
-  currentView: string;
+  currentView: ViewId;
 };
 
 export type WrapParamsContextValue = {
@@ -36,6 +42,9 @@ export type ViewParamsStoreContextValue = {
 };
 
 export const WorkspaceNavigateContext = createContext<NavigateFnTyped | undefined>(undefined);
+export const WorkspaceCloseAuxiliaryViewContext = createContext<(() => void) | undefined>(
+  undefined
+);
 export const WorkspaceSlotsContext = createContext<SlotsContextValue | undefined>(undefined);
 export const WorkspaceWrapParamsContext = createContext<WrapParamsContextValue | undefined>(
   undefined
@@ -54,6 +63,14 @@ export function useNavigate(): { navigate: NavigateFnTyped } {
     throw new Error('useNavigate must be used within a WorkspaceViewProvider');
   }
   return { navigate };
+}
+
+export function useCloseAuxiliaryView(): () => void {
+  const closeAuxiliaryView = useContext(WorkspaceCloseAuxiliaryViewContext);
+  if (!closeAuxiliaryView) {
+    throw new Error('useCloseAuxiliaryView must be used within a WorkspaceViewProvider');
+  }
+  return closeAuxiliaryView;
 }
 
 export function useWorkspaceSlots(): SlotsContextValue {

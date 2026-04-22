@@ -6,6 +6,7 @@ export type ProjectView = 'tasks' | 'pull-request' | 'settings';
 
 export class ProjectViewStore implements Snapshottable<ProjectViewSnapshot> {
   activeView: ProjectView = 'tasks';
+  previousNonSettingsView: Exclude<ProjectView, 'settings'> = 'tasks';
   taskView: TaskViewStore = new TaskViewStore();
 
   constructor() {
@@ -13,7 +14,16 @@ export class ProjectViewStore implements Snapshottable<ProjectViewSnapshot> {
   }
 
   setProjectView(view: ProjectView) {
+    if (view !== 'settings') {
+      this.previousNonSettingsView = view;
+    } else if (this.activeView !== 'settings') {
+      this.previousNonSettingsView = this.activeView;
+    }
     this.activeView = view;
+  }
+
+  closeSettings() {
+    this.activeView = this.previousNonSettingsView;
   }
 
   get snapshot(): ProjectViewSnapshot {

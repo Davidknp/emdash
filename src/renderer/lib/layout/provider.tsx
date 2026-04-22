@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
   type ReactNode,
@@ -21,6 +22,8 @@ import { focusTracker } from '@renderer/utils/focus-tracker';
 import { clearTelemetryTaskScope, setTelemetryTaskScope } from '@renderer/utils/telemetry-scope';
 import { captureTelemetry } from '@renderer/utils/telemetryClient';
 import {
+  isAuxiliaryTopLevelView,
+  WorkspaceCloseAuxiliaryViewContext,
   WorkspaceNavigateContext,
   WorkspaceSlotsContext,
   WorkspaceUpdateViewParamsContext,
@@ -33,6 +36,9 @@ import {
 } from './navigation-provider';
 
 type ViewParamsStore = Partial<{ [K in ViewId]: WrapParams<K> }>;
+type PreviousAuxiliaryView = {
+  viewId: Exclude<ViewId, 'settings' | 'skills' | 'mcp'>;
+};
 
 function syncTelemetryScope(currentViewId: ViewId, viewParamsStore: ViewParamsStore): void {
   if (currentViewId !== 'task') {
@@ -80,6 +86,7 @@ export function WorkspaceViewProvider({ children }: { children: ReactNode }) {
     () => appState.navigation.viewParamsStore as ViewParamsStore
   );
   const [_, startTransition] = useTransition();
+  const previousAuxiliaryViewRef = useRef<PreviousAuxiliaryView | null>(null);
 
   // Sync React state back to the MobX persistence mirror after every commit.
   // The SnapshotRegistry reaction then debounces the RPC write by 1 s.
@@ -98,9 +105,24 @@ export function WorkspaceViewProvider({ children }: { children: ReactNode }) {
     syncTelemetryScope(currentViewId, viewParamsStore);
   }, [currentViewId, viewParamsStore]);
 
+  const closeAuxiliaryView = useCallback(() => {
+    const previousView = previousAuxiliaryViewRef.current;
+
+    startTransition(() => {
+      setCurrentViewId(previousView?.viewId ?? 'home');
+      closeModal();
+    });
+  }, [closeModal]);
+
   const navigate = useCallback(
     (...args: unknown[]) => {
       const [viewId, params] = args as [ViewId, Record<string, unknown> | undefined];
+      if (isAuxiliaryTopLevelView(viewId) && !isAuxiliaryTopLevelView(currentViewId)) {
+        previousAuxiliaryViewRef.current = {
+          viewId: currentViewId as Exclude<ViewId, 'settings' | 'skills' | 'mcp'>,
+        };
+      }
+
       if (viewId !== currentViewId) {
         const transition = focusTracker.transition(
           viewId === 'task'
@@ -172,15 +194,17 @@ export function WorkspaceViewProvider({ children }: { children: ReactNode }) {
 
   return (
     <WorkspaceNavigateContext.Provider value={navigate}>
-      <WorkspaceSlotsContext.Provider value={slotsValue}>
-        <WorkspaceWrapParamsContext.Provider value={wrapParamsValue}>
-          <WorkspaceViewParamsStoreContext.Provider value={viewParamsStoreValue}>
-            <WorkspaceUpdateViewParamsContext.Provider value={updateViewParams}>
-              {children}
-            </WorkspaceUpdateViewParamsContext.Provider>
-          </WorkspaceViewParamsStoreContext.Provider>
-        </WorkspaceWrapParamsContext.Provider>
-      </WorkspaceSlotsContext.Provider>
+      <WorkspaceCloseAuxiliaryViewContext.Provider value={closeAuxiliaryView}>
+        <WorkspaceSlotsContext.Provider value={slotsValue}>
+          <WorkspaceWrapParamsContext.Provider value={wrapParamsValue}>
+            <WorkspaceViewParamsStoreContext.Provider value={viewParamsStoreValue}>
+              <WorkspaceUpdateViewParamsContext.Provider value={updateViewParams}>
+                {children}
+              </WorkspaceUpdateViewParamsContext.Provider>
+            </WorkspaceViewParamsStoreContext.Provider>
+          </WorkspaceWrapParamsContext.Provider>
+        </WorkspaceSlotsContext.Provider>
+      </WorkspaceCloseAuxiliaryViewContext.Provider>
     </WorkspaceNavigateContext.Provider>
   );
 }
