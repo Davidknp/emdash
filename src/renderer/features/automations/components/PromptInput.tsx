@@ -76,42 +76,49 @@ function segmentize(text: string): Segment[] {
   return segments;
 }
 
-// NOTE: The inline provider icon adds a small amount of layout width that the
-// underlying textarea does not know about, so characters rendered after a
-// mention in the overlay drift ~14px to the right of the textarea caret. This
-// is acceptable because users type at end-of-line, where drift is invisible,
-// and mentions are short/rare. If this ever becomes a real problem, the fix is
-// to move to a contenteditable implementation.
+// The overlay must preserve character widths exactly — anything that adds
+// layout width desynchronizes the caret. We pair `paddingLeft` with a
+// matching negative `marginLeft` so the pill visually extends left into the
+// preceding whitespace (for the icon) while its layout width stays equal to
+// the raw `$token` glyph width. Text inside the pill is rendered inline so
+// it stays on the surrounding text baseline. The `$` glyph is hidden
+// (opacity 0) to keep the visible content clean while preserving its width.
+const MENTION_ICON_BOX = 18;
+
 function MentionPill({
   raw,
   recognized,
   provider,
-  token,
 }: {
   raw: string;
   recognized: boolean;
   provider: MentionProvider | undefined;
-  token: string;
 }) {
   if (!recognized || !provider) {
     return (
-      <span className="rounded-[3px] font-medium text-muted-foreground/80 underline decoration-dotted underline-offset-2">
+      <span className="text-muted-foreground/80 underline decoration-dotted underline-offset-2">
         {raw}
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-[3px] bg-primary/10 px-1 font-medium text-primary align-baseline">
+    <span
+      className="relative rounded-[4px] bg-primary/10 text-primary"
+      style={{ paddingLeft: MENTION_ICON_BOX, marginLeft: -MENTION_ICON_BOX }}
+    >
       <img
         src={provider.logo}
         alt=""
         aria-hidden="true"
         className={cn(
-          'pointer-events-none h-3 w-3 select-none',
+          'pointer-events-none absolute left-[3px] top-1/2 h-3 w-3 -translate-y-1/2 select-none',
           provider.invertInDark && 'dark:invert'
         )}
       />
-      <span>{token}</span>
+      <span className="opacity-0" aria-hidden="true">
+        {raw.charAt(0)}
+      </span>
+      {raw.slice(1)}
     </span>
   );
 }
@@ -127,7 +134,6 @@ function Highlighted({ value }: { value: string }) {
           <MentionPill
             key={i}
             raw={seg.raw}
-            token={seg.token}
             recognized={MENTION_TOKENS.has(seg.token)}
             provider={seg.provider}
           />
@@ -373,7 +379,7 @@ export const PromptInput: React.FC<Props> = ({
         onClick={handleSelectionChange}
         onBlur={() => setPicker(CLOSED)}
         placeholder={placeholder}
-        spellCheck
+        spellCheck={false}
         className={cn(
           'absolute inset-0 w-full resize-none overflow-hidden bg-transparent px-5 pt-1 pb-4 text-sm leading-6 text-transparent caret-foreground placeholder:text-transparent focus:outline-none',
           textareaClassName

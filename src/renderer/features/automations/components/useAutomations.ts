@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+  type UseMutationOptions,
+} from '@tanstack/react-query';
 import { useEffect, useSyncExternalStore } from 'react';
 import type {
   Automation,
@@ -6,6 +12,7 @@ import type {
   CreateAutomationInput,
   UpdateAutomationInput,
 } from '@shared/automations/types';
+import type { Result } from '@shared/result';
 import { useToast } from '@renderer/lib/hooks/use-toast';
 import { rpc } from '@renderer/lib/ipc';
 import {
@@ -18,6 +25,40 @@ import {
 const LIST_KEY = ['automations', 'list'] as const;
 const runLogsKey = (id: string) => ['automations', 'run-logs', id] as const;
 
+async function unwrap<T>(result: Result<T, string>, fallback: string): Promise<T> {
+  if (!result.success) throw new Error(result.error ?? fallback);
+  return result.data;
+}
+
+type ToastFn = ReturnType<typeof useToast>['toast'];
+
+function buildMutation<TVars, TData>(
+  queryClient: QueryClient,
+  toast: ToastFn,
+  opts: {
+    run: (vars: TVars) => Promise<Result<TData, string>>;
+    errorLabel: string;
+    successToast?: string;
+    onSuccess?: (data: TData, vars: TVars) => void;
+  }
+): UseMutationOptions<TData, Error, TVars> {
+  return {
+    mutationFn: async (vars) => unwrap(await opts.run(vars), `${opts.errorLabel} failed`),
+    onSuccess: (data, vars) => {
+      queryClient.invalidateQueries({ queryKey: LIST_KEY });
+      opts.onSuccess?.(data, vars);
+      if (opts.successToast) toast({ title: opts.successToast });
+    },
+    onError: (e) => {
+      toast({
+        title: `${opts.errorLabel} failed`,
+        description: e.message,
+        variant: 'destructive',
+      });
+    },
+  };
+}
+
 export function useAutomations() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -25,7 +66,7 @@ export function useAutomations() {
   useEffect(() => {
     return onAnyRunEnded((automationId) => {
       queryClient.invalidateQueries({ queryKey: LIST_KEY });
-      queryClient.invalidateQueries({ queryKey: ['automations', 'run-logs', automationId] });
+      queryClient.invalidateQueries({ queryKey: runLogsKey(automationId) });
     });
   }, [queryClient]);
 
@@ -35,86 +76,46 @@ export function useAutomations() {
     refetch,
   } = useQuery({
     queryKey: LIST_KEY,
-    queryFn: async () => {
-      const res = await rpc.automations.list();
-      if (!res.success) throw new Error(res.error ?? 'Failed to load automations');
-      return res.data;
-    },
+    queryFn: async () => unwrap(await rpc.automations.list(), 'Failed to load automations'),
     refetchInterval: 15_000,
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (input: CreateAutomationInput) => {
-      const res = await rpc.automations.create(input);
-      if (!res.success) throw new Error(res.error ?? 'Failed to create automation');
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: LIST_KEY });
-      toast({ title: 'Automation created' });
-    },
-    onError: (e) => {
-      toast({ title: 'Create failed', description: e.message, variant: 'destructive' });
-    },
-  });
+  const createMutation = useMutation(
+    buildMutation<CreateAutomationInput, Automation>(queryClient, toast, {
+      run: (input) => rpc.automations.create(input),
+      errorLabel: 'Create',
+    })
+  );
 
-  const updateMutation = useMutation({
-    mutationFn: async (input: UpdateAutomationInput) => {
-      const res = await rpc.automations.update(input);
-      if (!res.success) throw new Error(res.error ?? 'Failed to update automation');
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: LIST_KEY });
-    },
-    onError: (e) => {
-      toast({ title: 'Update failed', description: e.message, variant: 'destructive' });
-    },
-  });
+  const updateMutation = useMutation(
+    buildMutation<UpdateAutomationInput, unknown>(queryClient, toast, {
+      run: (input) => rpc.automations.update(input),
+      errorLabel: 'Update',
+    })
+  );
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await rpc.automations.delete({ id });
-      if (!res.success) throw new Error(res.error ?? 'Failed to delete automation');
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: LIST_KEY });
-      toast({ title: 'Automation deleted' });
-    },
-    onError: (e) => {
-      toast({ title: 'Delete failed', description: e.message, variant: 'destructive' });
-    },
-  });
+  const deleteMutation = useMutation(
+    buildMutation<string, unknown>(queryClient, toast, {
+      run: (id) => rpc.automations.delete({ id }),
+      errorLabel: 'Delete',
+      successToast: 'Automation deleted',
+    })
+  );
 
-  const toggleMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await rpc.automations.toggle({ id });
-      if (!res.success) throw new Error(res.error ?? 'Failed to toggle automation');
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: LIST_KEY });
-    },
-    onError: (e) => {
-      toast({ title: 'Toggle failed', description: e.message, variant: 'destructive' });
-    },
-  });
+  const toggleMutation = useMutation(
+    buildMutation<string, unknown>(queryClient, toast, {
+      run: (id) => rpc.automations.toggle({ id }),
+      errorLabel: 'Toggle',
+    })
+  );
 
-  const triggerNowMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await rpc.automations.triggerNow({ id });
-      if (!res.success) throw new Error(res.error ?? 'Failed to trigger automation');
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: LIST_KEY });
-      toast({ title: 'Automation triggered' });
-    },
-    onError: (e) => {
-      toast({ title: 'Trigger failed', description: e.message, variant: 'destructive' });
-    },
-  });
+  const triggerNowMutation = useMutation(
+    buildMutation<string, unknown>(queryClient, toast, {
+      run: (id) => rpc.automations.triggerNow({ id }),
+      errorLabel: 'Trigger',
+      successToast: 'Automation triggered',
+    })
+  );
 
   return {
     automations,
@@ -135,12 +136,13 @@ export function useRunLogs(automationId: string | null, limit = 20) {
     queryKey: automationId ? runLogsKey(automationId) : ['automations', 'run-logs', 'none'],
     queryFn: async () => {
       if (!automationId) return [];
-      const res = await rpc.automations.runLogs({ automationId, limit });
-      if (!res.success) throw new Error(res.error ?? 'Failed to load run logs');
-      return res.data;
+      return unwrap(
+        await rpc.automations.runLogs({ automationId, limit }),
+        'Failed to load run logs'
+      );
     },
     enabled: !!automationId,
-    refetchInterval: 5_000,
+    refetchInterval: 30_000,
   });
 }
 
@@ -152,6 +154,54 @@ export function useIsAutomationRunning(automationId: string): boolean {
   );
 }
 
+export function useAutomationMemory(automationId: string) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const memoryKey = ['automations', 'memory', automationId] as const;
+
+  const query = useQuery({
+    queryKey: memoryKey,
+    queryFn: async () =>
+      unwrap(await rpc.automations.getMemory({ id: automationId }), 'Failed to load memory'),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (content: string) =>
+      unwrap(
+        await rpc.automations.setMemory({ id: automationId, content }),
+        'Failed to save memory'
+      ),
+    onSuccess: (data) => {
+      queryClient.setQueryData(memoryKey, data);
+      toast({ title: 'Memory saved' });
+    },
+    onError: (e) => {
+      toast({ title: 'Save failed', description: e.message, variant: 'destructive' });
+    },
+  });
+
+  const clearMutation = useMutation({
+    mutationFn: async () =>
+      unwrap(await rpc.automations.clearMemory({ id: automationId }), 'Failed to clear memory'),
+    onSuccess: (data) => {
+      queryClient.setQueryData(memoryKey, data);
+      toast({ title: 'Memory cleared' });
+    },
+    onError: (e) => {
+      toast({ title: 'Clear failed', description: e.message, variant: 'destructive' });
+    },
+  });
+
+  return {
+    data: query.data ?? null,
+    isLoading: query.isPending,
+    save: (content: string) => saveMutation.mutateAsync(content),
+    clear: () => clearMutation.mutateAsync(),
+    isSaving: saveMutation.isPending,
+    isClearing: clearMutation.isPending,
+  };
+}
+
 export function useRunningAutomationCount(): number {
   return useSyncExternalStore(
     subscribeRunning,
@@ -159,5 +209,3 @@ export function useRunningAutomationCount(): number {
     () => 0
   );
 }
-
-export type { Automation };

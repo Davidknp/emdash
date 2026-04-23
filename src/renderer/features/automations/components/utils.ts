@@ -1,4 +1,12 @@
-import type { AutomationSchedule, DayOfWeek, TriggerType } from '@shared/automations/types';
+import { formatDistanceToNowStrict } from 'date-fns';
+import {
+  TRIGGER_TYPE_LABELS,
+  type AutomationSchedule,
+  type DayOfWeek,
+  type TriggerType,
+} from '@shared/automations/types';
+
+export { TRIGGER_TYPE_LABELS };
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
   mon: 'Monday',
@@ -10,63 +18,53 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
   sun: 'Sunday',
 };
 
-export function describeSchedule(schedule: AutomationSchedule): string {
-  const hour = schedule.hour ?? 0;
-  const minute = schedule.minute ?? 0;
-  const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-  switch (schedule.type) {
-    case 'hourly':
-      return `Every hour at :${String(minute).padStart(2, '0')}`;
-    case 'daily':
-      return `Every day at ${time}`;
-    case 'weekly': {
-      const day = schedule.dayOfWeek ? DAY_LABELS[schedule.dayOfWeek] : 'Monday';
-      return `Every ${day} at ${time}`;
-    }
-    case 'monthly':
-      return `Day ${schedule.dayOfMonth ?? 1} of each month at ${time}`;
-  }
+export function pad2(n: number): string {
+  return String(n).padStart(2, '0');
 }
 
-export const TRIGGER_TYPE_LABELS: Record<TriggerType, string> = {
-  github_pr: 'GitHub PR',
-  github_issue: 'GitHub Issue',
-  linear_issue: 'Linear Issue',
-  jira_issue: 'Jira Issue',
-  gitlab_issue: 'GitLab Issue',
-  gitlab_mr: 'GitLab MR',
-  forgejo_issue: 'Forgejo Issue',
-  plain_thread: 'Plain Thread',
-};
+export function describeSchedule(schedule: AutomationSchedule): string {
+  switch (schedule.type) {
+    case 'hourly':
+      return `Every hour at :${pad2(schedule.minute)}`;
+    case 'daily':
+      return `Every day at ${pad2(schedule.hour)}:${pad2(schedule.minute)}`;
+    case 'weekly':
+      return `Every ${DAY_LABELS[schedule.dayOfWeek]} at ${pad2(schedule.hour)}:${pad2(schedule.minute)}`;
+    case 'monthly':
+      return `Day ${schedule.dayOfMonth} of each month at ${pad2(schedule.hour)}:${pad2(schedule.minute)}`;
+    case 'custom':
+      return schedule.rrule;
+  }
+}
 
 export function describeTrigger(triggerType: TriggerType | null): string {
   if (!triggerType) return 'No trigger';
   return TRIGGER_TYPE_LABELS[triggerType];
 }
 
-function formatDurationFromMs(ms: number): string {
-  const seconds = Math.round(ms / 1000);
-  if (Math.abs(seconds) < 60) return `${Math.abs(seconds)}s`;
-  const minutes = Math.round(seconds / 60);
-  if (Math.abs(minutes) < 60) return `${Math.abs(minutes)}m`;
-  const hours = Math.round(minutes / 60);
-  if (Math.abs(hours) < 24) return `${Math.abs(hours)}h`;
-  const days = Math.round(hours / 24);
-  return `${Math.abs(days)}d`;
+function toCompact(date: Date): string {
+  return formatDistanceToNowStrict(date, { roundingMethod: 'floor', addSuffix: false })
+    .replace(/ seconds?/, 's')
+    .replace(/ minutes?/, 'm')
+    .replace(/ hours?/, 'h')
+    .replace(/ days?/, 'd')
+    .replace(/ months?/, 'mo')
+    .replace(/ years?/, 'y');
 }
 
 export function formatRelative(iso: string | null): string {
   if (!iso) return 'never';
-  const then = new Date(iso).getTime();
-  return `${formatDurationFromMs(Date.now() - then)} ago`;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'never';
+  return `${toCompact(date)} ago`;
 }
 
 export function formatRelativeFuture(iso: string | null): string {
   if (!iso) return 'never';
-  const then = new Date(iso).getTime();
-  const diff = then - Date.now();
-  if (diff <= 0) return 'now';
-  return `in ${formatDurationFromMs(diff)}`;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'never';
+  if (date.getTime() - Date.now() <= 0) return 'now';
+  return `in ${toCompact(date)}`;
 }
 
 export function formatDateTime(iso: string | null): string {

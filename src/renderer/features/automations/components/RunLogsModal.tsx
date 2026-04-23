@@ -1,4 +1,5 @@
-import { CheckCircle2, Loader2, Timer, XCircle } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
+import { CheckCircle2, Loader2, Timer, XCircle, type LucideIcon } from 'lucide-react';
 import React from 'react';
 import type { AutomationRunLog } from '@shared/automations/types';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
@@ -13,7 +14,14 @@ type Props = {
   automationName: string;
 } & BaseModalProps<void>;
 
-function statusConfig(status: AutomationRunLog['status']) {
+type StatusConfig = {
+  Icon: LucideIcon;
+  iconClass: string;
+  bgClass: string;
+  label: string;
+};
+
+function statusConfig(status: AutomationRunLog['status']): StatusConfig {
   switch (status) {
     case 'success':
       return {
@@ -49,8 +57,26 @@ function durationLabel(log: AutomationRunLog): string {
   return `${minutes}m ${seconds}s`;
 }
 
+function LogRowSkeleton() {
+  return (
+    <div className="rounded-md border border-border/40 px-3 py-2.5">
+      <div className="flex items-start gap-2.5">
+        <div className="mt-0.5 h-6 w-6 shrink-0 animate-pulse rounded-full bg-muted/50" />
+        <div className="flex-1 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="h-3 w-16 animate-pulse rounded bg-muted/50" />
+            <div className="h-3 w-10 animate-pulse rounded bg-muted/40" />
+          </div>
+          <div className="h-3 w-24 animate-pulse rounded bg-muted/40" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export const RunLogsModal: React.FC<Props> = ({ automationId, automationName, onClose }) => {
   const { data: logs = [], isPending } = useRunLogs(automationId);
+  const shouldReduceMotion = useReducedMotion();
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -59,12 +85,17 @@ export const RunLogsModal: React.FC<Props> = ({ automationId, automationName, on
           <DialogTitle>{automationName}</DialogTitle>
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Timer className="h-3.5 w-3.5" />
-            {logs.length} {logs.length === 1 ? 'run' : 'runs'} total
+            <span className="tabular-nums">{logs.length}</span> {logs.length === 1 ? 'run' : 'runs'}{' '}
+            total
           </p>
         </DialogHeader>
         <ScrollArea className="max-h-[60vh]">
           {isPending ? (
-            <div className="py-6 text-center text-sm text-muted-foreground">Loading…</div>
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <LogRowSkeleton key={i} />
+              ))}
+            </div>
           ) : logs.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
               <Timer className="h-8 w-8 text-muted-foreground/40" />
@@ -72,15 +103,19 @@ export const RunLogsModal: React.FC<Props> = ({ automationId, automationName, on
             </div>
           ) : (
             <div className="space-y-2">
-              {logs.map((log) => {
+              {logs.map((log, i) => {
                 const { Icon, iconClass, bgClass, label } = statusConfig(log.status);
                 return (
-                  <div
+                  <motion.div
                     key={log.id}
-                    className={cn(
-                      'rounded-md border px-3 py-2.5 text-xs transition-colors',
-                      bgClass
-                    )}
+                    className={cn('rounded-md border px-3 py-2.5 text-xs', bgClass)}
+                    initial={shouldReduceMotion ? false : { opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: shouldReduceMotion ? 0 : 0.2,
+                      delay: shouldReduceMotion ? 0 : Math.min(i * 0.04, 0.32),
+                      ease: [0.23, 1, 0.32, 1],
+                    }}
                   >
                     <div className="flex items-start gap-2.5">
                       <div
@@ -97,7 +132,7 @@ export const RunLogsModal: React.FC<Props> = ({ automationId, automationName, on
                             {durationLabel(log)}
                           </span>
                         </div>
-                        <div className="mt-0.5 text-muted-foreground tabular-nums">
+                        <div className="mt-0.5 text-muted-foreground">
                           <span title={formatDateTime(log.startedAt)}>
                             {formatRelative(log.startedAt)}
                           </span>
@@ -112,7 +147,7 @@ export const RunLogsModal: React.FC<Props> = ({ automationId, automationName, on
                         )}
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
