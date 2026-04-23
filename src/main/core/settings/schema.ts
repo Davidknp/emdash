@@ -44,6 +44,7 @@ export const keyboardSettingsSchema = z
   .optional(
     z.object({
       commandPalette: z.string().nullable().optional(),
+      search: z.string().nullable().optional(),
       settings: z.string().nullable().optional(),
       toggleLeftSidebar: z.string().nullable().optional(),
       toggleRightSidebar: z.string().nullable().optional(),

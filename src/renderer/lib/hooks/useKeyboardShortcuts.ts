@@ -31,6 +31,13 @@ function defineShortcuts<T extends Record<string, AppShortcutDef>>(
 }
 
 export const APP_SHORTCUTS = defineShortcuts({
+  search: {
+    defaultHotkey: 'Mod+F',
+    label: 'Search',
+    description: 'Focus the search input',
+    category: 'Navigation',
+    hideFromSettings: true,
+  },
   commandPalette: {
     defaultHotkey: 'Mod+K',
     label: 'Command Palette',
