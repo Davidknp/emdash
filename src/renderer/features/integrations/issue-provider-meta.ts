@@ -20,12 +20,13 @@ export const ISSUE_PROVIDER_META: Record<
   {
     displayName: string;
     logo: string;
+    invertInDark?: boolean;
   }
 > = {
-  linear: { displayName: 'Linear', logo: linearLogo },
-  github: { displayName: 'GitHub', logo: githubLogo },
+  linear: { displayName: 'Linear', logo: linearLogo, invertInDark: true },
+  github: { displayName: 'GitHub', logo: githubLogo, invertInDark: true },
   jira: { displayName: 'Jira', logo: jiraLogo },
   gitlab: { displayName: 'GitLab', logo: gitlabLogo },
   forgejo: { displayName: 'Forgejo', logo: forgejoLogo },
-  plain: { displayName: 'Plain', logo: plainLogo },
+  plain: { displayName: 'Plain', logo: plainLogo, invertInDark: true },
 };
