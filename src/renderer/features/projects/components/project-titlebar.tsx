@@ -1,4 +1,4 @@
-import { Ellipsis, Trash2 } from 'lucide-react';
+import { Ellipsis, ExternalLink, Trash2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import {
   asMounted,
@@ -10,6 +10,8 @@ import {
 import type { ProjectView } from '@renderer/features/projects/stores/project-view';
 import { OpenInMenu } from '@renderer/lib/components/titlebar/open-in-menu';
 import { Titlebar } from '@renderer/lib/components/titlebar/Titlebar';
+import { useNameWithOwner } from '@renderer/lib/hooks/useNameWithOwner';
+import { rpc } from '@renderer/lib/ipc';
 import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Button } from '@renderer/lib/ui/button';
@@ -20,15 +22,19 @@ import {
   DropdownMenuTrigger,
 } from '@renderer/lib/ui/dropdown-menu';
 import { ToggleGroup, ToggleGroupItem } from '@renderer/lib/ui/toggle-group';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 
 export const ProjectTitlebar = observer(function ProjectTitlebar() {
   const {
     params: { projectId },
   } = useParams('project');
   const { navigate } = useNavigate();
+  const { data: remoteState } = useNameWithOwner(projectId);
   const store = getProjectStore(projectId);
   const kind = projectViewKind(store);
   const displayName = projectDisplayName(store);
+  const githubUrl =
+    remoteState?.status === 'ready' ? `https://github.com/${remoteState.nameWithOwner}` : null;
 
   const showConfirmDeleteProject = useShowModal('confirmActionModal');
 
@@ -68,6 +74,22 @@ export const ProjectTitlebar = observer(function ProjectTitlebar() {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {githubUrl && (
+        <Tooltip>
+          <TooltipTrigger>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="View repository on GitHub"
+              className="text-foreground-muted hover:text-foreground"
+              onClick={() => void rpc.app.openExternal(githubUrl)}
+            >
+              <ExternalLink className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>View repository on GitHub</TooltipContent>
+        </Tooltip>
+      )}
     </div>
   ) : null;
 
