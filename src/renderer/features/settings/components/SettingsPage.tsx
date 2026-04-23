@@ -222,25 +222,25 @@ export function SettingsPage({
   };
 
   const matchesQuery = useCallback(
-    (text: string) => {
-      if (!hasQuery) return true;
-      return text.toLowerCase().includes(normalizedQuery);
-    },
-    [hasQuery, normalizedQuery]
+    (text: string) => text.toLowerCase().includes(normalizedQuery),
+    [normalizedQuery]
   );
 
-  const filteredTabs = hasQuery
-    ? tabs.filter((tab) => {
-        if (tab.isExternal) return false;
-        const content = tabContent[tab.id as Exclude<SettingsPageTab, 'docs'>];
-        if (!content) return false;
-        const tabText = `${tab.label} ${content.title} ${content.description} ${content.keywords}`;
-        if (matchesQuery(tabText)) return true;
-        return content.sections.some((section) =>
-          matchesQuery(`${section.title ?? ''} ${section.keywords}`)
-        );
-      })
-    : tabs;
+  const filteredTabs = useMemo(() => {
+    if (!hasQuery) return tabs;
+    return tabs.filter((tab) => {
+      if (tab.isExternal) return false;
+      const content = tabContent[tab.id as Exclude<SettingsPageTab, 'docs'>];
+      if (!content) return false;
+      const tabText = `${tab.label} ${content.title} ${content.description} ${content.keywords}`;
+      if (matchesQuery(tabText)) return true;
+      return content.sections.some((section) =>
+        matchesQuery(`${section.title ?? ''} ${section.keywords}`)
+      );
+    });
+    // tabs/tabContent are rebuilt every render; matchesQuery captures the query
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasQuery, matchesQuery]);
 
   useEffect(() => {
     if (!hasQuery) return;
@@ -251,18 +251,15 @@ export function SettingsPage({
 
   const currentContent = tabContent[activeTab as Exclude<SettingsPageTab, 'docs'>];
 
-  const visibleSections = !currentContent
-    ? []
-    : !hasQuery
-      ? currentContent.sections
-      : (() => {
-          const tabText = `${currentContent.title} ${currentContent.description} ${currentContent.keywords}`;
-          const tabMatches = matchesQuery(tabText);
-          return currentContent.sections.filter((section) => {
-            if (tabMatches) return true;
-            return matchesQuery(`${section.title ?? ''} ${section.keywords}`);
-          });
-        })();
+  const visibleSections = (() => {
+    if (!currentContent) return [];
+    if (!hasQuery) return currentContent.sections;
+    const tabText = `${currentContent.title} ${currentContent.description} ${currentContent.keywords}`;
+    if (matchesQuery(tabText)) return currentContent.sections;
+    return currentContent.sections.filter((section) =>
+      matchesQuery(`${section.title ?? ''} ${section.keywords}`)
+    );
+  })();
 
   const noResults = hasQuery && filteredTabs.length === 0;
 
@@ -280,7 +277,7 @@ export function SettingsPage({
               />
             </div>
             <nav className="flex min-h-0 w-52 flex-col gap-0.5 overflow-y-auto">
-              {(hasQuery ? filteredTabs : tabs).map((tab) => {
+              {filteredTabs.map((tab) => {
                 const isActive = tab.id === activeTab && !tab.isExternal;
                 return (
                   <button
@@ -309,7 +306,6 @@ export function SettingsPage({
               )}
             </nav>
           </div>
-          {/* Content container */}
           {currentContent && !noResults && (
             <div className="min-h-0 min-w-0 flex-1 justify-center overflow-x-hidden overflow-y-auto">
               <div className="mx-auto w-full max-w-4xl space-y-8 py-10">

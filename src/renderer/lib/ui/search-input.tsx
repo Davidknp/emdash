@@ -1,22 +1,28 @@
 import { useHotkey } from '@tanstack/react-hotkeys';
 import { Search } from 'lucide-react';
 import * as React from 'react';
+import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
+import {
+  getEffectiveHotkey,
+  getHotkeyRegistration,
+} from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { Input } from '@renderer/lib/ui/input';
 import { ShortcutHint } from '@renderer/lib/ui/shortcut-hint';
 import { cn } from '@renderer/utils/utils';
 
 function SearchInput({ className, value, ...props }: React.ComponentProps<'input'>) {
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const { value: keyboard } = useAppSettingsKey('keyboard');
 
   useHotkey(
-    'Mod+F',
+    getHotkeyRegistration('search', keyboard),
     () => {
       inputRef.current?.focus();
     },
-    { enabled: true }
+    { enabled: getEffectiveHotkey('search', keyboard) !== null }
   );
 
-  const isEmpty = !value || value === '';
+  const isEmpty = !value;
 
   return (
     <div className="relative flex items-center">
