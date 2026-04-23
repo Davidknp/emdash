@@ -1,14 +1,13 @@
-export type ScheduleType = 'hourly' | 'daily' | 'weekly' | 'monthly';
+export type ScheduleType = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'custom';
 
 export type DayOfWeek = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
-export interface AutomationSchedule {
-  type: ScheduleType;
-  hour?: number;
-  minute?: number;
-  dayOfWeek?: DayOfWeek;
-  dayOfMonth?: number;
-}
+export type AutomationSchedule =
+  | { type: 'hourly'; minute: number }
+  | { type: 'daily'; hour: number; minute: number }
+  | { type: 'weekly'; dayOfWeek: DayOfWeek; hour: number; minute: number }
+  | { type: 'monthly'; dayOfMonth: number; hour: number; minute: number }
+  | { type: 'custom'; rrule: string };
 
 export type TriggerType =
   | 'github_pr'
@@ -71,10 +70,13 @@ export interface CreateAutomationInput {
   prompt: string;
   agentId: string;
   mode?: AutomationMode;
-  schedule: AutomationSchedule;
+  /** Required when `mode` is `'schedule'`; ignored for trigger mode. */
+  schedule?: AutomationSchedule;
   triggerType?: TriggerType;
   triggerConfig?: TriggerConfig;
   useWorktree?: boolean;
+  /** Initial status; defaults to `'active'`. Use `'paused'` for drafts. */
+  status?: AutomationStatus;
 }
 
 export interface UpdateAutomationInput {
@@ -103,6 +105,13 @@ export const TRIGGER_INTEGRATION_MAP: Record<TriggerType, TriggerIntegrationId> 
   plain_thread: 'plain',
 };
 
-export function getIntegrationForTrigger(triggerType: TriggerType): TriggerIntegrationId {
-  return TRIGGER_INTEGRATION_MAP[triggerType];
-}
+export const TRIGGER_TYPE_LABELS: Record<TriggerType, string> = {
+  github_pr: 'GitHub PR',
+  github_issue: 'GitHub Issue',
+  linear_issue: 'Linear Issue',
+  jira_issue: 'Jira Issue',
+  gitlab_issue: 'GitLab Issue',
+  gitlab_mr: 'GitLab MR',
+  forgejo_issue: 'Forgejo Issue',
+  plain_thread: 'Plain Thread',
+};

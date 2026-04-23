@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { and, desc, eq, inArray, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, lte, sql } from 'drizzle-orm';
 import { isValidProviderId, type AgentProviderId } from '@shared/agent-provider-registry';
 import {
   TRIGGER_INTEGRATION_MAP,
@@ -8,8 +8,6 @@ import {
   type AutomationRunLog,
   type AutomationSchedule,
   type CreateAutomationInput,
-  type DayOfWeek,
-  type ScheduleType,
   type TriggerConfig,
   type TriggerType,
   type UpdateAutomationInput,
@@ -17,7 +15,6 @@ import {
 import { agentSessionExitedChannel } from '@shared/events/agentEvents';
 import { automationRunStatusChannel } from '@shared/events/automationEvents';
 import { bareRefName } from '@shared/git-utils';
-import type { Issue } from '@shared/tasks';
 import { getIssueProvider } from '@main/core/issues/registry';
 import { getProjectById } from '@main/core/projects/operations/getProjects';
 import { createTask } from '@main/core/tasks/createTask';
@@ -30,6 +27,35 @@ import {
 } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
+import {
+  buildMemoryPromptSection,
+  deleteAutomationMemory,
+  loadAutomationMemory,
+  resetAutomationMemory,
+  writeAutomationMemory,
+} from './memory';
+import {
+  persistRunLogUpdate,
+  pruneRunLogs,
+  startRunAtomic,
+  writeLastRunResult,
+} from './run-log-store';
+import {
+  computeNextRun,
+  deserializeSchedule,
+  serializeSchedule,
+  validateSchedule,
+} from './schedule-utils';
+import {
+  assertSupportedTriggerType,
+  enrichPromptWithEvent,
+  issueToRawEvent,
+  isSupportedTriggerType,
+  listUnsupportedFilters,
+  matchesTriggerFilters,
+  resolveIssueProviderType,
+  type RawEvent,
+} from './trigger-mapping';
 
 // ---------------------------------------------------------------------------
 // Prompt mention expansion ($github, $linear, …)
@@ -59,39 +85,18 @@ function expandMentionsInPrompt(prompt: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// RawEvent shape returned by fetchers
-// ---------------------------------------------------------------------------
-
-interface RawEvent {
-  id: string;
-  title: string;
-  url?: string;
-  type: string;
-  extra?: string;
-  labels?: string[];
-  branch?: string;
-  assignee?: string;
-  identifier?: string;
-  description?: string;
-}
-
-// ---------------------------------------------------------------------------
 // AsyncMutex — promise-chaining based mutex
 // ---------------------------------------------------------------------------
 
 class AsyncMutex {
-  private chain: Promise<void> = Promise.resolve();
+  private chain: Promise<unknown> = Promise.resolve();
 
-  async run<T>(fn: () => Promise<T>): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      this.chain = this.chain.then(async () => {
-        try {
-          resolve(await fn());
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
+  run<T>(fn: () => Promise<T>): Promise<T> {
+    // Each caller awaits their own `fn`, but subsequent callers must wait even
+    // if we reject — so the chain we store always resolves.
+    const next = this.chain.then(fn, fn);
+    this.chain = next.catch(() => undefined);
+    return next;
   }
 }
 
@@ -101,97 +106,17 @@ const dataMutex = new AsyncMutex();
 // Constants
 // ---------------------------------------------------------------------------
 
-const DAY_ORDER: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-const VALID_SCHEDULE_TYPES: ScheduleType[] = ['hourly', 'daily', 'weekly', 'monthly'];
 const VALID_AUTOMATION_STATUS: Automation['status'][] = ['active', 'paused', 'error'];
 const VALID_RUN_STATUS: AutomationRunLog['status'][] = ['running', 'success', 'failure'];
-const SUPPORTED_TRIGGER_TYPES: TriggerType[] = [
-  'github_issue',
-  'linear_issue',
-  'jira_issue',
-  'gitlab_issue',
-  'forgejo_issue',
-  'plain_thread',
-];
 
-const MAX_RUNS_PER_AUTOMATION = 100;
-const MAX_TOTAL_RUNS = 2000;
 const DEFAULT_MAX_RUN_DURATION_MS = 2 * 60 * 60 * 1000; // 2h
 const SCHEDULER_TICK_MS = 30_000;
-const TRIGGER_TICK_MS = 60_000;
+const TRIGGER_TICK_MS = 30_000;
+const TRIGGER_EVENT_FETCH_LIMIT = 200;
 
 // ---------------------------------------------------------------------------
-// Validation + helpers
+// Helpers
 // ---------------------------------------------------------------------------
-
-function validateSchedule(schedule: AutomationSchedule): void {
-  if (!VALID_SCHEDULE_TYPES.includes(schedule.type)) {
-    throw new Error(`Invalid schedule type: ${schedule.type}`);
-  }
-  if (schedule.hour !== undefined && (schedule.hour < 0 || schedule.hour > 23)) {
-    throw new Error(`Invalid hour: ${schedule.hour} (must be 0-23)`);
-  }
-  if (schedule.minute !== undefined && (schedule.minute < 0 || schedule.minute > 59)) {
-    throw new Error(`Invalid minute: ${schedule.minute} (must be 0-59)`);
-  }
-  if (schedule.type === 'weekly' && schedule.dayOfWeek && !DAY_ORDER.includes(schedule.dayOfWeek)) {
-    throw new Error(`Invalid dayOfWeek: ${schedule.dayOfWeek}`);
-  }
-  if (schedule.type === 'monthly') {
-    const dom = schedule.dayOfMonth ?? 1;
-    if (dom < 1 || dom > 31) {
-      throw new Error(`Invalid dayOfMonth: ${dom} (must be 1-31)`);
-    }
-  }
-}
-
-function computeNextRun(schedule: AutomationSchedule, fromDate?: Date): string {
-  const now = fromDate ?? new Date();
-  const next = new Date(now);
-  const hour = schedule.hour ?? 0;
-  const minute = schedule.minute ?? 0;
-
-  switch (schedule.type) {
-    case 'hourly': {
-      next.setMinutes(minute, 0, 0);
-      if (next <= now) next.setHours(next.getHours() + 1);
-      break;
-    }
-    case 'daily': {
-      next.setHours(hour, minute, 0, 0);
-      if (next <= now) next.setDate(next.getDate() + 1);
-      break;
-    }
-    case 'weekly': {
-      const targetDay = DAY_ORDER.indexOf(schedule.dayOfWeek ?? 'mon');
-      const currentDay = next.getDay();
-      let daysUntil = targetDay - currentDay;
-      if (daysUntil < 0) daysUntil += 7;
-      if (daysUntil === 0) {
-        next.setHours(hour, minute, 0, 0);
-        if (next <= now) daysUntil = 7;
-      }
-      if (daysUntil > 0) next.setDate(next.getDate() + daysUntil);
-      next.setHours(hour, minute, 0, 0);
-      break;
-    }
-    case 'monthly': {
-      const desired = schedule.dayOfMonth ?? 1;
-      const daysInCurrent = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
-      next.setDate(Math.min(desired, daysInCurrent));
-      next.setHours(hour, minute, 0, 0);
-      if (next <= now) {
-        next.setMonth(next.getMonth() + 1);
-        const daysInNext = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
-        next.setDate(Math.min(desired, daysInNext));
-        next.setHours(hour, minute, 0, 0);
-      }
-      break;
-    }
-  }
-
-  return next.toISOString();
-}
 
 function generateId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
@@ -215,34 +140,19 @@ function normalizeRunStatus(value: unknown): AutomationRunLog['status'] {
 }
 
 function normalizeMode(value: unknown): AutomationMode {
-  return value === 'trigger' ? 'trigger' : 'schedule';
+  if (value === 'trigger' || value === 'schedule') return value;
+  log.warn(`[Automations] Unknown mode in DB row, defaulting to 'schedule': ${String(value)}`);
+  return 'schedule';
 }
 
 function normalizeTriggerType(value: unknown): TriggerType | null {
   if (typeof value === 'string' && value in TRIGGER_INTEGRATION_MAP) {
     return value as TriggerType;
   }
-  return null;
-}
-
-function isSupportedTriggerType(triggerType: TriggerType): boolean {
-  return SUPPORTED_TRIGGER_TYPES.includes(triggerType);
-}
-
-function assertSupportedTriggerType(triggerType: TriggerType): void {
-  if (!isSupportedTriggerType(triggerType)) {
-    throw new Error(`Trigger type not supported yet: ${triggerType}`);
+  if (value != null && value !== '') {
+    log.warn(`[Automations] Unknown trigger type in DB row, dropping: ${String(value)}`);
   }
-}
-
-function serializeSchedule(schedule: AutomationSchedule): string {
-  return JSON.stringify(schedule);
-}
-
-function deserializeSchedule(serialized: string): AutomationSchedule {
-  const parsed = JSON.parse(serialized) as AutomationSchedule;
-  validateSchedule(parsed);
-  return parsed;
+  return null;
 }
 
 function serializeTriggerConfig(config: TriggerConfig | null | undefined): string | null {
@@ -254,7 +164,8 @@ function deserializeTriggerConfig(serialized: string | null): TriggerConfig | nu
   if (!serialized) return null;
   try {
     return JSON.parse(serialized) as TriggerConfig;
-  } catch {
+  } catch (err) {
+    log.warn('[Automations] Failed to parse trigger config, ignoring:', err);
     return null;
   }
 }
@@ -306,7 +217,7 @@ type PendingRun = {
   taskId: string;
 };
 
-class AutomationsService {
+export class AutomationsService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private triggerTimer: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
@@ -325,6 +236,12 @@ class AutomationsService {
 
   /** Unsubscribe function for the agent session exited event bus. */
   private agentExitUnsub: (() => void) | null = null;
+
+  /** Automations currently being seeded — prevents trigger-tick from racing. */
+  private seedingAutomations = new Set<string>();
+
+  /** Automation ids we've already warned about unsupported filters for. */
+  private warnedUnsupportedFilters = new Set<string>();
 
   // -------------------------------------------------------------------
   // Lifecycle
@@ -384,6 +301,46 @@ class AutomationsService {
     }
   }
 
+  /**
+   * Advance one due scheduled automation: update its nextRunAt/runCount, insert a running run-log,
+   * and return the updated automation + runLogId for dispatch. Assumes `dataMutex` is held.
+   */
+  private async dispatchDueSchedule(
+    automation: Automation,
+    now: Date
+  ): Promise<{ automation: Automation; runLogId: string } | null> {
+    if (automation.mode !== 'schedule') return null;
+    if (!automation.nextRunAt) return null;
+    if (this.inFlightRuns.has(automation.id)) return null;
+
+    const nowIso = now.toISOString();
+    const runLogId = generateId('run');
+    const nextRunAt = computeNextRun(automation.schedule, now, new Date(automation.createdAt));
+    const nextRunCount = automation.runCount + 1;
+
+    startRunAtomic({
+      automationId: automation.id,
+      nowIso,
+      runCount: nextRunCount,
+      nextRunAt,
+      runLogId,
+    });
+    await pruneRunLogs(automation.id);
+
+    this.inFlightRuns.add(automation.id);
+
+    return {
+      automation: {
+        ...automation,
+        lastRunAt: nowIso,
+        runCount: nextRunCount,
+        nextRunAt,
+        updatedAt: nowIso,
+      },
+      runLogId,
+    };
+  }
+
   private async executeTick(): Promise<void> {
     const triggers: Array<{ automation: Automation; runLogId: string }> = [];
 
@@ -397,47 +354,8 @@ class AutomationsService {
         .where(and(eq(automationsTable.status, 'active'), lte(automationsTable.nextRunAt, nowIso)));
 
       for (const row of dueRows) {
-        const automation = mapAutomationRow(row);
-        if (automation.mode !== 'schedule') continue;
-        if (!automation.nextRunAt) continue;
-        if (this.inFlightRuns.has(automation.id)) continue;
-
-        const runLogId = generateId('run');
-        const nextRunAt = computeNextRun(automation.schedule, now);
-        const nextRunCount = automation.runCount + 1;
-
-        await db
-          .update(automationsTable)
-          .set({
-            lastRunAt: nowIso,
-            runCount: nextRunCount,
-            nextRunAt,
-            updatedAt: nowIso,
-          })
-          .where(eq(automationsTable.id, automation.id));
-
-        await this.insertRunLog({
-          id: runLogId,
-          automationId: automation.id,
-          startedAt: nowIso,
-          finishedAt: null,
-          status: 'running',
-          error: null,
-          taskId: null,
-        });
-
-        this.inFlightRuns.add(automation.id);
-
-        triggers.push({
-          automation: {
-            ...automation,
-            lastRunAt: nowIso,
-            runCount: nextRunCount,
-            nextRunAt,
-            updatedAt: nowIso,
-          },
-          runLogId,
-        });
+        const dispatched = await this.dispatchDueSchedule(mapAutomationRow(row), now);
+        if (dispatched) triggers.push(dispatched);
       }
     });
 
@@ -478,50 +396,58 @@ class AutomationsService {
 
     for (const automation of activeAutomations) {
       if (!automation.triggerType) continue;
+      if (this.inFlightRuns.has(automation.id)) continue;
+      if (this.seedingAutomations.has(automation.id)) continue;
+
+      const ignoredFilters = listUnsupportedFilters(automation.triggerConfig);
+      if (ignoredFilters.length > 0 && !this.warnedUnsupportedFilters.has(automation.id)) {
+        this.warnedUnsupportedFilters.add(automation.id);
+        log.warn(
+          `[Automations] "${automation.name}" has filters that the current matcher ignores: ${ignoredFilters.join(', ')}`
+        );
+      }
 
       try {
-        const newEvents = await this.fetchNewEventsCached(automation, fetchCache);
+        const newEvents = await this.fetchNewEventsDelta(automation, fetchCache);
         if (newEvents.length === 0) continue;
 
-        for (const event of newEvents) {
-          const runLogId = generateId('run');
-          const nowIso = new Date().toISOString();
-          const enrichedPrompt = this.enrichPromptWithEvent(automation.prompt, event);
+        // Dispatch at most one event per tick per automation so inFlightRuns
+        // stays honest; the rest are left uncommitted and will be re-detected
+        // on the next poll once this run completes.
+        const event = newEvents[0];
+        const runLogId = generateId('run');
+        const nowIso = new Date().toISOString();
+        const enrichedPrompt = enrichPromptWithEvent(automation.prompt, event);
+        const nextRunCount = automation.runCount + 1;
 
-          await dataMutex.run(async () => {
-            await db
-              .update(automationsTable)
-              .set({
-                lastRunAt: nowIso,
-                runCount: sql`${automationsTable.runCount} + 1`,
-                updatedAt: nowIso,
-              })
-              .where(eq(automationsTable.id, automation.id));
-
-            await this.insertRunLog({
-              id: runLogId,
-              automationId: automation.id,
-              startedAt: nowIso,
-              finishedAt: null,
-              status: 'running',
-              error: null,
-              taskId: null,
-            });
-          });
-
-          triggers.push({
-            automation: {
-              ...automation,
-              prompt: enrichedPrompt,
-              lastRunAt: nowIso,
-              runCount: automation.runCount + 1,
-            },
+        await dataMutex.run(async () => {
+          if (this.inFlightRuns.has(automation.id)) return;
+          startRunAtomic({
+            automationId: automation.id,
+            nowIso,
+            runCount: nextRunCount,
+            nextRunAt: null,
             runLogId,
           });
-        }
+          this.inFlightRuns.add(automation.id);
+          this.commitKnownEvent(automation.id, event.id);
+        });
+        await pruneRunLogs(automation.id);
+
+        if (!this.inFlightRuns.has(automation.id)) continue;
+
+        triggers.push({
+          automation: {
+            ...automation,
+            prompt: enrichedPrompt,
+            lastRunAt: nowIso,
+            runCount: nextRunCount,
+          },
+          runLogId,
+        });
       } catch (err) {
         log.error(`[Automations] Trigger poll failed for "${automation.name}":`, err);
-        await this.setLastRunResult(
+        await writeLastRunResult(
           automation.id,
           'failure',
           err instanceof Error ? err.message : String(err)
@@ -534,27 +460,25 @@ class AutomationsService {
     }
   }
 
-  private enrichPromptWithEvent(basePrompt: string, event: RawEvent): string {
-    const lines: string[] = [];
-    lines.push(`[Triggered by ${event.type}: "${event.title}"]`);
-    if (event.url) lines.push(`URL: ${event.url}`);
-    if (event.identifier) lines.push(`ID: ${event.identifier}`);
-    if (event.extra) lines.push(event.extra);
-    if (event.description) lines.push('', event.description);
-    return `${lines.join('\n')}\n\n${basePrompt}`;
+  private commitKnownEvent(automationId: string, eventId: string): void {
+    const known = this.knownEventIds.get(automationId) ?? new Set<string>();
+    known.add(eventId);
+    if (known.size > 5000) {
+      const entries = Array.from(known);
+      const toRemove = entries.slice(0, entries.length - 2000);
+      for (const id of toRemove) known.delete(id);
+    }
+    this.knownEventIds.set(automationId, known);
   }
 
   // -------------------------------------------------------------------
   // Event fetching (uses v1 issue-provider registry)
   // -------------------------------------------------------------------
 
-  private async fetchNewEventsCached(
+  private async fetchNewEventsDelta(
     automation: Automation,
     cache: Map<string, Promise<RawEvent[]>>
   ): Promise<RawEvent[]> {
-    const known = this.knownEventIds.get(automation.id) ?? new Set<string>();
-    const newEvents: RawEvent[] = [];
-
     const cacheKey = `${automation.projectId}::${automation.triggerType}`;
     let eventsPromise = cache.get(cacheKey);
     if (!eventsPromise) {
@@ -564,6 +488,7 @@ class AutomationsService {
     const rawEvents = await eventsPromise;
 
     if (!this.knownEventIds.has(automation.id)) {
+      // First sighting — seed and do not fire.
       this.knownEventIds.set(automation.id, new Set(rawEvents.map((e) => e.id)));
       log.info(
         `[Automations] Seeded ${rawEvents.length} known events for "${automation.name}" (${automation.triggerType})`
@@ -571,53 +496,26 @@ class AutomationsService {
       return [];
     }
 
+    const known = this.knownEventIds.get(automation.id) ?? new Set<string>();
+    const newEvents: RawEvent[] = [];
     for (const event of rawEvents) {
-      if (!known.has(event.id)) {
-        if (this.matchesTriggerFilters(event, automation.triggerConfig)) {
-          newEvents.push(event);
-        }
-        known.add(event.id);
+      if (!known.has(event.id) && matchesTriggerFilters(event, automation.triggerConfig)) {
+        newEvents.push(event);
       }
     }
-
-    if (known.size > 5000) {
-      const entries = Array.from(known);
-      const toRemove = entries.slice(0, entries.length - 2000);
-      for (const id of toRemove) known.delete(id);
-    }
-
-    this.knownEventIds.set(automation.id, known);
     return newEvents;
   }
 
-  private matchesTriggerFilters(event: RawEvent, config: TriggerConfig | null): boolean {
-    if (!config) return true;
-
-    // Current v1 issue-provider adapters only expose assignee data consistently.
-    // Ignore legacy label/branch filters instead of silently preventing all runs.
-    if (config.assigneeFilter) {
-      if (!event.assignee) return false;
-      if (event.assignee.toLowerCase() !== config.assigneeFilter.toLowerCase()) return false;
-    }
-
-    return true;
-  }
-
   private async fetchRawEvents(automation: Automation): Promise<RawEvent[]> {
-    if (!automation.triggerType) return [];
+    const triggerType = automation.triggerType;
+    if (!triggerType) return [];
 
-    if (!isSupportedTriggerType(automation.triggerType)) {
-      log.warn(`[Automations] Trigger type not supported yet: ${automation.triggerType}`);
+    if (!isSupportedTriggerType(triggerType)) {
+      log.warn(`[Automations] Trigger type not supported yet: ${triggerType}`);
       return [];
     }
 
-    const providerType = this.resolveIssueProviderType(automation.triggerType);
-    if (!providerType) {
-      log.warn(
-        `[Automations] Trigger type ${automation.triggerType} has no v1 adapter mapping yet`
-      );
-      return [];
-    }
+    const providerType = resolveIssueProviderType(triggerType);
 
     const provider = getIssueProvider(providerType);
     if (!provider) {
@@ -638,7 +536,7 @@ class AutomationsService {
       projectId: project.id,
       projectPath,
       nameWithOwner: nameWithOwner ?? undefined,
-      limit: 30,
+      limit: TRIGGER_EVENT_FETCH_LIMIT,
     });
 
     if (!result.success) {
@@ -648,63 +546,13 @@ class AutomationsService {
       return [];
     }
 
-    return result.issues.map((issue) => this.issueToRawEvent(issue, automation.triggerType!));
-  }
-
-  private resolveIssueProviderType(triggerType: TriggerType): Issue['provider'] | null {
-    switch (triggerType) {
-      case 'github_pr':
-      case 'github_issue':
-        return 'github';
-      case 'linear_issue':
-        return 'linear';
-      case 'jira_issue':
-        return 'jira';
-      case 'gitlab_issue':
-      case 'gitlab_mr':
-        return 'gitlab';
-      case 'forgejo_issue':
-        return 'forgejo';
-      case 'plain_thread':
-        return 'plain';
+    if (result.issues.length >= TRIGGER_EVENT_FETCH_LIMIT) {
+      log.warn(
+        `[Automations] Trigger fetch reached limit (${TRIGGER_EVENT_FETCH_LIMIT}) for "${automation.name}". Increase limit or poll frequency to avoid missing bursts.`
+      );
     }
-  }
 
-  private issueToRawEvent(issue: Issue, triggerType: TriggerType): RawEvent {
-    const typeLabel = this.triggerTypeLabel(triggerType);
-    return {
-      id: `${issue.provider}-${issue.identifier || issue.url}`,
-      title: issue.title,
-      url: issue.url,
-      type: typeLabel,
-      extra: issue.identifier ? `${issue.identifier}: ${issue.title}` : issue.title,
-      labels: undefined,
-      branch: undefined,
-      assignee: issue.assignees?.[0],
-      identifier: issue.identifier,
-      description: issue.description,
-    };
-  }
-
-  private triggerTypeLabel(triggerType: TriggerType): string {
-    switch (triggerType) {
-      case 'github_pr':
-        return 'GitHub PR';
-      case 'github_issue':
-        return 'GitHub Issue';
-      case 'linear_issue':
-        return 'Linear Issue';
-      case 'jira_issue':
-        return 'Jira Issue';
-      case 'gitlab_issue':
-        return 'GitLab Issue';
-      case 'gitlab_mr':
-        return 'GitLab MR';
-      case 'forgejo_issue':
-        return 'Forgejo Issue';
-      case 'plain_thread':
-        return 'Plain Thread';
-    }
+    return result.issues.map((issue) => issueToRawEvent(issue, triggerType));
   }
 
   private async resolveNameWithOwner(projectId: string): Promise<string | null> {
@@ -746,6 +594,16 @@ class AutomationsService {
       }
       const providerId: AgentProviderId = automation.agentId;
 
+      let promptWithMemory = expandMentionsInPrompt(automation.prompt);
+      try {
+        const { path: memoryFilePath, content: memoryContent } = await loadAutomationMemory(
+          automation.id
+        );
+        promptWithMemory = `${promptWithMemory}\n\n${buildMemoryPromptSection(memoryFilePath, memoryContent)}`;
+      } catch (err) {
+        log.warn(`[Automations] Failed to load memory for ${automation.id}:`, err);
+      }
+
       const result = await createTask({
         id: taskId,
         projectId: automation.projectId,
@@ -760,7 +618,7 @@ class AutomationsService {
           taskId,
           provider: providerId,
           title: automation.name,
-          initialPrompt: expandMentionsInPrompt(automation.prompt),
+          initialPrompt: promptWithMemory,
           autoApprove: true,
         },
       });
@@ -830,9 +688,13 @@ class AutomationsService {
     this.pendingRunsByTaskId.delete(taskId);
 
     const nowIso = new Date().toISOString();
-    const isSuccess = exitCode === 0 || exitCode === undefined;
-    const status: AutomationRunLog['status'] = isSuccess ? 'success' : 'failure';
-    const errorMsg = isSuccess ? null : `Agent exited with code ${exitCode}`;
+    const isSuccess = exitCode === 0;
+    const status: 'success' | 'failure' = isSuccess ? 'success' : 'failure';
+    const errorMsg = isSuccess
+      ? null
+      : exitCode === undefined
+        ? 'Agent exited without status (likely killed or signalled)'
+        : `Agent exited with code ${exitCode}`;
 
     try {
       await this.updateRunLog(
@@ -840,11 +702,7 @@ class AutomationsService {
         { status, error: errorMsg, finishedAt: nowIso },
         pending.automationId
       );
-      await this.setLastRunResult(
-        pending.automationId,
-        status as 'success' | 'failure',
-        errorMsg ?? undefined
-      );
+      await writeLastRunResult(pending.automationId, status, errorMsg ?? undefined);
       events.emit(automationRunStatusChannel, {
         automationId: pending.automationId,
         runLogId: pending.runLogId,
@@ -861,46 +719,6 @@ class AutomationsService {
   // Run log internals
   // -------------------------------------------------------------------
 
-  private async insertRunLog(runLog: AutomationRunLog): Promise<void> {
-    await db
-      .insert(automationRunLogsTable)
-      .values({
-        id: runLog.id,
-        automationId: runLog.automationId,
-        startedAt: runLog.startedAt,
-        finishedAt: runLog.finishedAt,
-        status: runLog.status,
-        error: runLog.error,
-        taskId: runLog.taskId,
-      })
-      .onConflictDoNothing();
-
-    const perAutomationRows = await db
-      .select({ id: automationRunLogsTable.id })
-      .from(automationRunLogsTable)
-      .where(eq(automationRunLogsTable.automationId, runLog.automationId))
-      .orderBy(desc(automationRunLogsTable.startedAt), desc(automationRunLogsTable.id));
-
-    if (perAutomationRows.length > MAX_RUNS_PER_AUTOMATION) {
-      const idsToDelete = perAutomationRows.slice(MAX_RUNS_PER_AUTOMATION).map((row) => row.id);
-      await db
-        .delete(automationRunLogsTable)
-        .where(inArray(automationRunLogsTable.id, idsToDelete));
-    }
-
-    const allRows = await db
-      .select({ id: automationRunLogsTable.id })
-      .from(automationRunLogsTable)
-      .orderBy(desc(automationRunLogsTable.startedAt), desc(automationRunLogsTable.id));
-
-    if (allRows.length > MAX_TOTAL_RUNS) {
-      const idsToDelete = allRows.slice(MAX_TOTAL_RUNS).map((row) => row.id);
-      await db
-        .delete(automationRunLogsTable)
-        .where(inArray(automationRunLogsTable.id, idsToDelete));
-    }
-  }
-
   private async failRun(
     runLogId: string,
     automationId: string,
@@ -912,7 +730,7 @@ class AutomationsService {
       { status: 'failure', error: errorMessage, finishedAt: nowIso },
       automationId
     );
-    await this.setLastRunResult(automationId, 'failure', errorMessage);
+    await writeLastRunResult(automationId, 'failure', errorMessage);
     events.emit(automationRunStatusChannel, {
       automationId,
       runLogId,
@@ -945,7 +763,12 @@ class AutomationsService {
 
   async create(input: CreateAutomationInput): Promise<Automation> {
     const mode: AutomationMode = input.mode ?? 'schedule';
-    if (mode === 'schedule') validateSchedule(input.schedule);
+    if (mode === 'schedule') {
+      if (!input.schedule) {
+        throw new Error('schedule is required when mode is "schedule"');
+      }
+      validateSchedule(input.schedule);
+    }
     if (mode === 'trigger' && !input.triggerType) {
       throw new Error('triggerType is required when mode is "trigger"');
     }
@@ -958,6 +781,12 @@ class AutomationsService {
 
     const now = new Date().toISOString();
     const isTrigger = mode === 'trigger';
+    // Triggers don't use a schedule; store a stable placeholder so the persisted
+    // entity shape stays uniform without polluting the create API.
+    const schedule: AutomationSchedule = isTrigger
+      ? { type: 'daily', hour: 9, minute: 0 }
+      : (input.schedule as AutomationSchedule);
+    const status = input.status ?? 'active';
     const automation: Automation = {
       id: generateId('auto'),
       name: input.name,
@@ -966,13 +795,16 @@ class AutomationsService {
       prompt: input.prompt,
       agentId: input.agentId,
       mode,
-      schedule: input.schedule,
+      schedule,
       triggerType: isTrigger ? (input.triggerType ?? null) : null,
       triggerConfig: isTrigger ? (input.triggerConfig ?? null) : null,
       useWorktree: input.useWorktree ?? true,
-      status: 'active',
+      status,
       lastRunAt: null,
-      nextRunAt: isTrigger ? null : computeNextRun(input.schedule),
+      nextRunAt:
+        isTrigger || status === 'paused'
+          ? null
+          : computeNextRun(schedule, new Date(now), new Date(now)),
       runCount: 0,
       lastRunResult: null,
       lastRunError: null,
@@ -1012,20 +844,24 @@ class AutomationsService {
   }
 
   private async seedAutomationEvents(automation: Automation): Promise<void> {
+    if (this.seedingAutomations.has(automation.id)) return;
+    this.seedingAutomations.add(automation.id);
     try {
       const rawEvents = await this.fetchRawEvents(automation);
-      this.knownEventIds.set(automation.id, new Set(rawEvents.map((e) => e.id)));
+      await dataMutex.run(async () => {
+        this.knownEventIds.set(automation.id, new Set(rawEvents.map((e) => e.id)));
+      });
       log.info(
         `[Automations] Pre-seeded ${rawEvents.length} events for "${automation.name}" (${automation.triggerType})`
       );
     } catch (err) {
       log.warn(`[Automations] Failed to pre-seed events for "${automation.name}":`, err);
+    } finally {
+      this.seedingAutomations.delete(automation.id);
     }
   }
 
   async update(input: UpdateAutomationInput): Promise<Automation | null> {
-    if (input.schedule) validateSchedule(input.schedule);
-
     const rows = await db
       .select()
       .from(automationsTable)
@@ -1036,7 +872,11 @@ class AutomationsService {
 
     const current = mapAutomationRow(row);
     const nextMode = input.mode ?? current.mode;
-    const nextSchedule = input.schedule ?? current.schedule;
+    const nextSchedule =
+      nextMode === 'schedule' ? (input.schedule ?? current.schedule) : current.schedule;
+    if (nextMode === 'schedule') {
+      validateSchedule(nextSchedule);
+    }
     const nextUpdatedAt = new Date().toISOString();
     const isTrigger = nextMode === 'trigger';
     const nextProjectId = input.projectId ?? current.projectId;
@@ -1082,7 +922,7 @@ class AutomationsService {
       nextRunAt: isTrigger
         ? null
         : input.schedule
-          ? computeNextRun(nextSchedule)
+          ? computeNextRun(nextSchedule, new Date(nextUpdatedAt), new Date(nextUpdatedAt))
           : current.nextRunAt,
       updatedAt: nextUpdatedAt,
     };
@@ -1116,8 +956,14 @@ class AutomationsService {
     const triggerProjectChanged = updated.mode === 'trigger' && projectChanged;
 
     if (triggerTypeChanged || switchedToTrigger || triggerProjectChanged) {
-      this.knownEventIds.delete(updated.id);
+      await dataMutex.run(async () => {
+        this.knownEventIds.delete(updated.id);
+      });
       void this.seedAutomationEvents(updated);
+    }
+
+    if (input.triggerConfig !== undefined) {
+      this.warnedUnsupportedFilters.delete(updated.id);
     }
 
     return updated;
@@ -1134,8 +980,29 @@ class AutomationsService {
     await db.delete(automationsTable).where(eq(automationsTable.id, id));
     this.knownEventIds.delete(id);
     this.inFlightRuns.delete(id);
+    this.seedingAutomations.delete(id);
+    this.warnedUnsupportedFilters.delete(id);
+    await deleteAutomationMemory(id);
     log.info(`[Automations] Deleted automation ${id}`);
     return true;
+  }
+
+  async getMemory(id: string): Promise<{ path: string; content: string } | null> {
+    const automation = await this.get(id);
+    if (!automation) return null;
+    return loadAutomationMemory(id);
+  }
+
+  async setMemory(id: string, content: string): Promise<{ path: string; content: string } | null> {
+    const automation = await this.get(id);
+    if (!automation) return null;
+    return writeAutomationMemory(id, content);
+  }
+
+  async clearMemory(id: string): Promise<{ path: string; content: string } | null> {
+    const automation = await this.get(id);
+    if (!automation) return null;
+    return resetAutomationMemory(id);
   }
 
   async toggleStatus(id: string): Promise<Automation | null> {
@@ -1156,7 +1023,7 @@ class AutomationsService {
       status: nextStatus,
       nextRunAt:
         nextStatus === 'active' && automation.mode === 'schedule'
-          ? computeNextRun(automation.schedule)
+          ? computeNextRun(automation.schedule, new Date(nowIso), new Date(automation.createdAt))
           : automation.mode === 'trigger'
             ? null
             : automation.nextRunAt,
@@ -1175,7 +1042,9 @@ class AutomationsService {
       .where(eq(automationsTable.id, id));
 
     if (nextStatus === 'active' && updated.mode === 'trigger') {
-      this.knownEventIds.delete(updated.id);
+      await dataMutex.run(async () => {
+        this.knownEventIds.delete(updated.id);
+      });
       void this.seedAutomationEvents(updated);
     }
 
@@ -1192,36 +1061,26 @@ class AutomationsService {
     if (!row) return null;
 
     const automation = mapAutomationRow(row);
-    if (this.inFlightRuns.has(automation.id)) {
-      throw new Error('Automation is already running');
-    }
-
     const runLogId = generateId('run');
     const nowIso = new Date().toISOString();
     const nextRunCount = automation.runCount + 1;
 
     await dataMutex.run(async () => {
-      await db
-        .update(automationsTable)
-        .set({
-          lastRunAt: nowIso,
-          runCount: nextRunCount,
-          updatedAt: nowIso,
-        })
-        .where(eq(automationsTable.id, automation.id));
+      if (this.inFlightRuns.has(automation.id)) {
+        throw new Error('Automation is already running');
+      }
 
-      await this.insertRunLog({
-        id: runLogId,
+      startRunAtomic({
         automationId: automation.id,
-        startedAt: nowIso,
-        finishedAt: null,
-        status: 'running',
-        error: null,
-        taskId: null,
+        nowIso,
+        runCount: nextRunCount,
+        nextRunAt: automation.nextRunAt,
+        runLogId,
       });
 
       this.inFlightRuns.add(automation.id);
     });
+    await pruneRunLogs(automation.id);
 
     const updatedAutomation: Automation = {
       ...automation,
@@ -1248,39 +1107,20 @@ class AutomationsService {
     return rows.map(mapRunRow);
   }
 
+  /**
+   * Persist a run-log update. When the update carries a terminal status the
+   * automation's in-flight marker is cleared so subsequent ticks may dispatch
+   * again. `automationId` is required to keep that bookkeeping honest.
+   */
   async updateRunLog(
     runId: string,
     update: Partial<Pick<AutomationRunLog, 'status' | 'error' | 'finishedAt' | 'taskId'>>,
-    automationId?: string
+    automationId: string
   ): Promise<void> {
-    await db
-      .update(automationRunLogsTable)
-      .set({
-        status: update.status,
-        error: update.error,
-        finishedAt: update.finishedAt,
-        taskId: update.taskId,
-      })
-      .where(eq(automationRunLogsTable.id, runId));
-
-    if (automationId && (update.status === 'success' || update.status === 'failure')) {
+    await persistRunLogUpdate(runId, update);
+    if (update.status === 'success' || update.status === 'failure') {
       this.inFlightRuns.delete(automationId);
     }
-  }
-
-  async setLastRunResult(
-    automationId: string,
-    result: 'success' | 'failure',
-    error?: string
-  ): Promise<void> {
-    await db
-      .update(automationsTable)
-      .set({
-        lastRunResult: result,
-        lastRunError: error ?? null,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(automationsTable.id, automationId));
   }
 
   // -------------------------------------------------------------------
@@ -1342,47 +1182,8 @@ class AutomationsService {
           );
 
         for (const row of dueRows) {
-          const automation = mapAutomationRow(row);
-          if (automation.mode !== 'schedule') continue;
-          if (!automation.nextRunAt) continue;
-          if (this.inFlightRuns.has(automation.id)) continue;
-
-          const runLogId = generateId('run');
-          const nextRunAt = computeNextRun(automation.schedule, now);
-          const nextRunCount = automation.runCount + 1;
-
-          await db
-            .update(automationsTable)
-            .set({
-              lastRunAt: nowIso,
-              runCount: nextRunCount,
-              nextRunAt,
-              updatedAt: nowIso,
-            })
-            .where(eq(automationsTable.id, automation.id));
-
-          await this.insertRunLog({
-            id: runLogId,
-            automationId: automation.id,
-            startedAt: nowIso,
-            finishedAt: null,
-            status: 'running',
-            error: null,
-            taskId: null,
-          });
-
-          this.inFlightRuns.add(automation.id);
-
-          triggers.push({
-            automation: {
-              ...automation,
-              lastRunAt: nowIso,
-              runCount: nextRunCount,
-              nextRunAt,
-              updatedAt: nowIso,
-            },
-            runLogId,
-          });
+          const dispatched = await this.dispatchDueSchedule(mapAutomationRow(row), now);
+          if (dispatched) triggers.push(dispatched);
         }
       });
 

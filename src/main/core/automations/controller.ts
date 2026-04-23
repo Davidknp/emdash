@@ -1,90 +1,43 @@
 import type { CreateAutomationInput, UpdateAutomationInput } from '@shared/automations/types';
 import { createRPCController } from '@shared/ipc/rpc';
+import { err, ok, type Result } from '@shared/result';
 import { automationsService } from '@main/core/automations/AutomationsService';
 import { log } from '@main/lib/logger';
 
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+async function wrap<T>(scope: string, fn: () => Promise<T>): Promise<Result<T, string>> {
+  try {
+    return ok(await fn());
+  } catch (error) {
+    log.error(`[Automations.${scope}]`, error);
+    return err(error instanceof Error ? error.message : String(error));
+  }
 }
 
 export const automationsController = createRPCController({
-  list: async () => {
-    try {
-      const data = await automationsService.list();
-      return { success: true as const, data };
-    } catch (error) {
-      log.error('[Automations.list]', error);
-      return { success: false as const, error: toMessage(error) };
-    }
-  },
+  list: () => wrap('list', () => automationsService.list()),
 
-  get: async (args: { id: string }) => {
-    try {
-      const data = await automationsService.get(args.id);
-      return { success: true as const, data };
-    } catch (error) {
-      log.error('[Automations.get]', error);
-      return { success: false as const, error: toMessage(error) };
-    }
-  },
+  get: (args: { id: string }) => wrap('get', () => automationsService.get(args.id)),
 
-  create: async (args: CreateAutomationInput) => {
-    try {
-      const data = await automationsService.create(args);
-      return { success: true as const, data };
-    } catch (error) {
-      log.error('[Automations.create]', error);
-      return { success: false as const, error: toMessage(error) };
-    }
-  },
+  create: (args: CreateAutomationInput) => wrap('create', () => automationsService.create(args)),
 
-  update: async (args: UpdateAutomationInput) => {
-    try {
-      const data = await automationsService.update(args);
-      return { success: true as const, data };
-    } catch (error) {
-      log.error('[Automations.update]', error);
-      return { success: false as const, error: toMessage(error) };
-    }
-  },
+  update: (args: UpdateAutomationInput) => wrap('update', () => automationsService.update(args)),
 
-  delete: async (args: { id: string }) => {
-    try {
-      const data = await automationsService.delete(args.id);
-      return { success: true as const, data };
-    } catch (error) {
-      log.error('[Automations.delete]', error);
-      return { success: false as const, error: toMessage(error) };
-    }
-  },
+  delete: (args: { id: string }) => wrap('delete', () => automationsService.delete(args.id)),
 
-  toggle: async (args: { id: string }) => {
-    try {
-      const data = await automationsService.toggleStatus(args.id);
-      return { success: true as const, data };
-    } catch (error) {
-      log.error('[Automations.toggle]', error);
-      return { success: false as const, error: toMessage(error) };
-    }
-  },
+  toggle: (args: { id: string }) => wrap('toggle', () => automationsService.toggleStatus(args.id)),
 
-  triggerNow: async (args: { id: string }) => {
-    try {
-      const data = await automationsService.triggerNow(args.id);
-      return { success: true as const, data };
-    } catch (error) {
-      log.error('[Automations.triggerNow]', error);
-      return { success: false as const, error: toMessage(error) };
-    }
-  },
+  triggerNow: (args: { id: string }) =>
+    wrap('triggerNow', () => automationsService.triggerNow(args.id)),
 
-  runLogs: async (args: { automationId: string; limit?: number }) => {
-    try {
-      const data = await automationsService.getRunLogs(args.automationId, args.limit);
-      return { success: true as const, data };
-    } catch (error) {
-      log.error('[Automations.runLogs]', error);
-      return { success: false as const, error: toMessage(error) };
-    }
-  },
+  runLogs: (args: { automationId: string; limit?: number }) =>
+    wrap('runLogs', () => automationsService.getRunLogs(args.automationId, args.limit)),
+
+  getMemory: (args: { id: string }) =>
+    wrap('getMemory', () => automationsService.getMemory(args.id)),
+
+  setMemory: (args: { id: string; content: string }) =>
+    wrap('setMemory', () => automationsService.setMemory(args.id, args.content)),
+
+  clearMemory: (args: { id: string }) =>
+    wrap('clearMemory', () => automationsService.clearMemory(args.id)),
 });

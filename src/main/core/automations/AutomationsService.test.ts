@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { automationsService } from './AutomationsService';
+import { AutomationsService, automationsService } from './AutomationsService';
 
 const mocks = vi.hoisted(() => ({
   getProjectByIdMock: vi.fn(),
@@ -121,5 +121,62 @@ describe('automationsService.update', () => {
         triggerType: 'github_pr',
       })
     );
+  });
+
+  it('ignores invalid schedule updates while automation remains in trigger mode', async () => {
+    const updated = await automationsService.update({
+      id: legacyTriggerRow.id,
+      mode: 'trigger',
+      schedule: { type: 'custom', rrule: '' },
+      prompt: 'Keep this in trigger mode',
+    });
+
+    expect(updated).toMatchObject({
+      id: legacyTriggerRow.id,
+      mode: 'trigger',
+      prompt: 'Keep this in trigger mode',
+    });
+    expect(mocks.setMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        schedule: legacyTriggerRow.schedule,
+      })
+    );
+  });
+});
+
+describe('automationsService.updateRunLog', () => {
+  it('clears the in-flight marker on terminal status', async () => {
+    const service = new AutomationsService();
+    // @ts-expect-error — access private field for test-only state setup
+    service.inFlightRuns.add('auto-xyz');
+
+    await service.updateRunLog(
+      'run-1',
+      { status: 'success', finishedAt: '2026-04-23T10:00:00Z' },
+      'auto-xyz'
+    );
+
+    // @ts-expect-error — access private field for test-only state inspection
+    expect(service.inFlightRuns.has('auto-xyz')).toBe(false);
+  });
+
+  it('leaves the in-flight marker alone for non-terminal updates', async () => {
+    const service = new AutomationsService();
+    // @ts-expect-error — access private field for test-only state setup
+    service.inFlightRuns.add('auto-abc');
+
+    await service.updateRunLog('run-2', { taskId: 'task-1' }, 'auto-abc');
+
+    // @ts-expect-error — access private field for test-only state inspection
+    expect(service.inFlightRuns.has('auto-abc')).toBe(true);
+  });
+
+  it('isolates state between independent service instances', () => {
+    const a = new AutomationsService();
+    const b = new AutomationsService();
+    // @ts-expect-error — access private field for test-only state setup
+    a.inFlightRuns.add('shared-id');
+    // @ts-expect-error — access private field for test-only state inspection
+    expect(b.inFlightRuns.has('shared-id')).toBe(false);
   });
 });
