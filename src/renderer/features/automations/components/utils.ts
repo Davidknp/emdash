@@ -2,44 +2,35 @@ import { formatDistanceToNowStrict } from 'date-fns';
 import {
   TRIGGER_TYPE_LABELS,
   type AutomationSchedule,
-  type DayOfWeek,
   type TriggerType,
 } from '@shared/automations/types';
 
 export { TRIGGER_TYPE_LABELS };
 
-const DAY_LABELS: Record<DayOfWeek, string> = {
-  mon: 'Monday',
-  tue: 'Tuesday',
-  wed: 'Wednesday',
-  thu: 'Thursday',
-  fri: 'Friday',
-  sat: 'Saturday',
-  sun: 'Sunday',
-};
+export const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
 export function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-export function describeSchedule(schedule: AutomationSchedule): string {
-  switch (schedule.type) {
-    case 'hourly':
-      return `Every hour at :${pad2(schedule.minute)}`;
-    case 'daily':
-      return `Every day at ${pad2(schedule.hour)}:${pad2(schedule.minute)}`;
-    case 'weekly':
-      return `Every ${DAY_LABELS[schedule.dayOfWeek]} at ${pad2(schedule.hour)}:${pad2(schedule.minute)}`;
-    case 'monthly':
-      return `Day ${schedule.dayOfMonth} of each month at ${pad2(schedule.hour)}:${pad2(schedule.minute)}`;
-    case 'custom':
-      return schedule.rrule;
-  }
-}
-
 export function describeTrigger(triggerType: TriggerType | null): string {
   if (!triggerType) return 'No trigger';
   return TRIGGER_TYPE_LABELS[triggerType];
+}
+
+export function describeScheduleShort(schedule: AutomationSchedule): string {
+  switch (schedule.type) {
+    case 'hourly':
+      return 'Hourly';
+    case 'daily':
+      return 'Daily';
+    case 'weekly':
+      return 'Weekly';
+    case 'monthly':
+      return 'Monthly';
+    case 'custom':
+      return 'Custom';
+  }
 }
 
 function toCompact(date: Date): string {

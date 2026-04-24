@@ -1,12 +1,11 @@
-import { Clock, History, Loader2, Pause, Play, Trash2, Zap } from 'lucide-react';
+import { Clock, History, Pause, Play, Trash2, Zap } from 'lucide-react';
 import React from 'react';
 import type { Automation } from '@shared/automations/types';
 import { Button } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { cn } from '@renderer/utils/utils';
 import { TriggerTypeIcon } from './trigger-controls';
-import { useIsAutomationRunning } from './useAutomations';
-import { describeSchedule, describeTrigger, formatRelative, formatRelativeFuture } from './utils';
+import { describeScheduleShort, describeTrigger } from './utils';
 
 type Props = {
   automation: Automation;
@@ -18,15 +17,7 @@ type Props = {
   busy?: boolean;
 };
 
-function StatusLabel({ automation, isRunning }: { automation: Automation; isRunning: boolean }) {
-  if (isRunning) {
-    return (
-      <span className="inline-flex items-center gap-1 text-blue-500/90">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        Running
-      </span>
-    );
-  }
+function StatusLabel({ automation }: { automation: Automation }) {
   if (automation.status === 'paused') {
     return <span className="text-muted-foreground/60">Paused</span>;
   }
@@ -46,11 +37,11 @@ export const AutomationRow: React.FC<Props> = ({
   busy = false,
 }) => {
   const isPaused = automation.status === 'paused';
-  const isRunning = useIsAutomationRunning(automation.id);
   const cadence =
     automation.mode === 'schedule'
-      ? describeSchedule(automation.schedule)
+      ? describeScheduleShort(automation.schedule)
       : describeTrigger(automation.triggerType);
+  const projectLabel = automation.projectName || automation.projectId;
 
   const stop = (e: React.MouseEvent) => e.stopPropagation();
   return (
@@ -66,126 +57,120 @@ export const AutomationRow: React.FC<Props> = ({
         }
       }}
       className={cn(
-        'group cursor-pointer rounded-xl border border-border bg-muted/20 px-3 py-2.5 shadow-sm transition-[background-color,border-color,opacity,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-muted/40 active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-        isPaused && !busy && !isRunning && 'opacity-60',
-        isRunning && 'border-blue-500/30 bg-blue-500/[0.04]'
+        'group cursor-pointer rounded-lg bg-muted/20 px-3 py-2.5 shadow-[0_0_0_1px_rgb(0_0_0/0.06),0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-[0_0_0_1px_rgb(255_255_255/0.06),0_1px_2px_rgb(0_0_0/0.3)] hover:bg-muted/40 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [transition-property:background-color,opacity,box-shadow,transform] [transition-duration:150ms,150ms,150ms,120ms] [transition-timing-function:cubic-bezier(0.23,1,0.32,1)]',
+        isPaused && !busy && 'opacity-60'
       )}
     >
       <div className="flex items-center gap-3">
-        <div className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted/60 text-muted-foreground">
           {automation.mode === 'trigger' && automation.triggerType ? (
             <TriggerTypeIcon triggerType={automation.triggerType} className="h-4 w-4" />
           ) : (
             <Clock className="h-4 w-4" />
           )}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
             <h3 className="text-sm font-medium truncate">{automation.name}</h3>
             <span className="shrink-0 text-xs">
-              <StatusLabel automation={automation} isRunning={isRunning} />
+              <StatusLabel automation={automation} />
             </span>
           </div>
-          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground/80 min-w-0">
-            <span className="truncate">{automation.projectName || automation.projectId}</span>
-            <span className="text-muted-foreground/40">·</span>
-            <span className="shrink-0">{automation.agentId}</span>
-            <span className="text-muted-foreground/40">·</span>
-            <span className="shrink-0 truncate">{cadence}</span>
-            <span className="text-muted-foreground/40">·</span>
-            <button
-              type="button"
-              onClick={(e) => {
-                stop(e);
-                onShowLogs();
-              }}
-              className="shrink-0 tabular-nums transition-colors duration-150 hover:text-foreground"
-            >
-              {automation.runCount} {automation.runCount === 1 ? 'run' : 'runs'}
-            </button>
-            <span className="text-muted-foreground/40">·</span>
-            <span className="shrink-0 tabular-nums">
-              {automation.mode === 'schedule' && !isPaused
-                ? `next ${formatRelativeFuture(automation.nextRunAt)}`
-                : `last ${formatRelative(automation.lastRunAt)}`}
-            </span>
+          <div className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground/80">
+            {projectLabel}
           </div>
           {automation.lastRunError && (
             <p className="mt-1 text-xs text-destructive/80 truncate">{automation.lastRunError}</p>
           )}
         </div>
 
-        <div className="flex items-center gap-0.5 shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-          {automation.mode === 'schedule' && (
+        <div className="relative shrink-0 flex items-center">
+          <span
+            className="text-xs text-muted-foreground/80 whitespace-nowrap transition-opacity duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover:opacity-0 group-focus-within:opacity-0"
+            aria-hidden="true"
+          >
+            {cadence}
+          </span>
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 translate-x-1 transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover:opacity-100 group-hover:translate-x-0 group-focus-within:opacity-100 group-focus-within:translate-x-0">
+            {automation.mode === 'schedule' && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={(e) => {
+                        stop(e);
+                        onTriggerNow();
+                      }}
+                      disabled={busy}
+                      aria-label="Run now"
+                    >
+                      <Zap className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>Run now</TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
-              <TooltipTrigger>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={(e) => {
-                    stop(e);
-                    onTriggerNow();
-                  }}
-                  disabled={busy}
-                  aria-label="Run now"
-                >
-                  <Zap className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Run now</TooltipContent>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={(e) => {
+                      stop(e);
+                      onToggle();
+                    }}
+                    disabled={busy}
+                    aria-label={isPaused ? 'Resume' : 'Pause'}
+                  >
+                    {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                  </Button>
+                }
+              />
+              <TooltipContent>{isPaused ? 'Resume' : 'Pause'}</TooltipContent>
             </Tooltip>
-          )}
-          <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={(e) => {
-                  stop(e);
-                  onToggle();
-                }}
-                disabled={busy}
-                aria-label={isPaused ? 'Resume' : 'Pause'}
-              >
-                {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{isPaused ? 'Resume' : 'Pause'}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={(e) => {
-                  stop(e);
-                  onShowLogs();
-                }}
-                aria-label="View run logs"
-              >
-                <History className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Run logs</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={(e) => {
-                  stop(e);
-                  onDelete();
-                }}
-                disabled={busy}
-                aria-label="Delete"
-                className="text-muted-foreground hover:text-destructive"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Delete</TooltipContent>
-          </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={(e) => {
+                      stop(e);
+                      onShowLogs();
+                    }}
+                    aria-label="View run logs"
+                  >
+                    <History className="h-4 w-4" />
+                  </Button>
+                }
+              />
+              <TooltipContent>Run logs</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={(e) => {
+                      stop(e);
+                      onDelete();
+                    }}
+                    disabled={busy}
+                    aria-label="Delete"
+                    className="text-muted-foreground hover:!bg-destructive/10 hover:!text-destructive dark:hover:!bg-destructive/20"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                }
+              />
+              <TooltipContent>Delete</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </div>
     </div>

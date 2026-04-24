@@ -1,4 +1,5 @@
 import { RunLogsModal } from '@renderer/features/automations/components/RunLogsModal';
+import { TemplatePickerModal } from '@renderer/features/automations/components/TemplatePickerModal';
 import { IntegrationSetupModal } from '@renderer/features/integrations/integration-setup-modal';
 import { McpModal } from '@renderer/features/mcp/components/McpModal';
 import { AddProjectModal } from '@renderer/features/projects/components/add-project-modal/add-project-modal';
@@ -46,4 +47,5 @@ export const modalRegistry = {
   integrationSetupModal: { component: IntegrationSetupModal, popupClassName: 'max-w-md' },
   addRemoteModal: { component: AddRemoteModal },
   runLogsModal: { component: RunLogsModal, popupClassName: 'max-w-2xl' },
+  templatePickerModal: { component: TemplatePickerModal, popupClassName: 'max-w-2xl' },
 } satisfies Record<string, ModalRegistryEntry>;

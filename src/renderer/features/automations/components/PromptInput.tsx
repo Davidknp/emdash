@@ -55,7 +55,10 @@ export const MENTION_PROVIDERS: MentionProvider[] = [
 ];
 
 const MENTION_TOKENS = new Set(MENTION_PROVIDERS.map((p) => p.token));
-const MENTION_SCAN_REGEX = /\$([a-zA-Z][a-zA-Z0-9_-]*)/g;
+// Enough trailing spaces so the raw textarea text is always wider than the
+// rendered chip. The chip is clamped to this width so the caret stays aligned.
+const MENTION_LAYOUT_PADDING = '            ';
+const MENTION_SCAN_REGEX = /\$([a-zA-Z][a-zA-Z0-9_-]*)( {0,12})/g;
 
 type Segment =
   | { kind: 'text'; text: string }
@@ -76,15 +79,6 @@ function segmentize(text: string): Segment[] {
   return segments;
 }
 
-// The overlay must preserve character widths exactly — anything that adds
-// layout width desynchronizes the caret. We pair `paddingLeft` with a
-// matching negative `marginLeft` so the pill visually extends left into the
-// preceding whitespace (for the icon) while its layout width stays equal to
-// the raw `$token` glyph width. Text inside the pill is rendered inline so
-// it stays on the surrounding text baseline. The `$` glyph is hidden
-// (opacity 0) to keep the visible content clean while preserving its width.
-const MENTION_ICON_BOX = 18;
-
 function MentionPill({
   raw,
   recognized,
@@ -102,23 +96,23 @@ function MentionPill({
     );
   }
   return (
-    <span
-      className="relative rounded-[4px] bg-primary/10 text-primary"
-      style={{ paddingLeft: MENTION_ICON_BOX, marginLeft: -MENTION_ICON_BOX }}
-    >
-      <img
-        src={provider.logo}
-        alt=""
+    <span className="relative inline-block align-baseline">
+      <span className="whitespace-pre opacity-0">{raw}</span>
+      <span
         aria-hidden="true"
-        className={cn(
-          'pointer-events-none absolute left-[3px] top-1/2 h-3 w-3 -translate-y-1/2 select-none',
-          provider.invertInDark && 'dark:invert'
-        )}
-      />
-      <span className="opacity-0" aria-hidden="true">
-        {raw.charAt(0)}
+        className="absolute inset-y-0 left-0 right-0 my-auto inline-flex h-6 items-center gap-1.5 overflow-hidden rounded-md border border-border/70 bg-background-tertiary/80 px-2 text-xs font-medium leading-none text-foreground shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]"
+      >
+        <img
+          src={provider.logo}
+          alt=""
+          aria-hidden="true"
+          className={cn(
+            'pointer-events-none h-3.5 w-3.5 shrink-0 select-none',
+            provider.invertInDark && 'dark:invert'
+          )}
+        />
+        <span className="whitespace-nowrap">{provider.label}</span>
       </span>
-      {raw.slice(1)}
     </span>
   );
 }
@@ -237,6 +231,7 @@ export const PromptInput: React.FC<Props> = ({
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const pendingCaretRef = useRef<number | null>(null);
   const [picker, setPicker] = useState<PickerState>(CLOSED);
   const [height, setHeight] = useState<number>(minHeight);
   const [caretPos, setCaretPos] = useState<{
@@ -251,6 +246,19 @@ export const PromptInput: React.FC<Props> = ({
     const next = Math.max(minHeight, overlayRef.current.offsetHeight);
     setHeight(next);
   }, [value, minHeight]);
+
+  // Apply pending caret after the parent-controlled value has been reflected
+  // into the textarea — synchronous so no intermediate frame flashes the wrong
+  // selection.
+  useLayoutEffect(() => {
+    const caret = pendingCaretRef.current;
+    if (caret === null) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    pendingCaretRef.current = null;
+    ta.focus();
+    ta.setSelectionRange(caret, caret);
+  }, [value]);
 
   const filtered = picker.open
     ? MENTION_PROVIDERS.filter((p) => p.token.startsWith(picker.query.toLowerCase()))
@@ -319,17 +327,12 @@ export const PromptInput: React.FC<Props> = ({
     const before = value.slice(0, picker.triggerStart);
     const afterStart = picker.triggerStart + 1 + picker.query.length;
     const after = value.slice(afterStart);
-    const insertion = `$${provider.token} `;
+    const insertion = `$${provider.token}${MENTION_LAYOUT_PADDING}`;
     const nextValue = `${before}${insertion}${after}`;
+    const nextCaret = before.length + insertion.length;
+    pendingCaretRef.current = nextCaret;
     onValueChange(nextValue);
     setPicker(CLOSED);
-    const nextCaret = before.length + insertion.length;
-    requestAnimationFrame(() => {
-      const ta = textareaRef.current;
-      if (!ta) return;
-      ta.focus();
-      ta.setSelectionRange(nextCaret, nextCaret);
-    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -349,6 +352,7 @@ export const PromptInput: React.FC<Props> = ({
       selectProvider(filtered[idx]);
     } else if (e.key === 'Escape') {
       e.preventDefault();
+      e.stopPropagation();
       setPicker(CLOSED);
     }
   };
@@ -392,7 +396,10 @@ export const PromptInput: React.FC<Props> = ({
         caretPos &&
         createPortal(
           <div
-            className="fixed z-[9999] w-[240px] overflow-hidden rounded-md border border-border bg-background-quaternary shadow-md ring-1 ring-foreground/10"
+            className={cn(
+              'fixed z-[9999] w-[240px] overflow-hidden rounded-md border border-border bg-background-quaternary shadow-md ring-1 ring-foreground/10 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150 motion-safe:ease-out',
+              caretPos.placement === 'below' ? 'origin-top-left' : 'origin-bottom-left'
+            )}
             style={
               caretPos.placement === 'below'
                 ? { top: caretPos.top, left: caretPos.left }
@@ -413,7 +420,7 @@ export const PromptInput: React.FC<Props> = ({
                 }}
                 onMouseEnter={() => setPicker((s) => ({ ...s, hoverIdx: i }))}
                 className={cn(
-                  'flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs',
+                  'flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors duration-100',
                   i === picker.hoverIdx
                     ? 'bg-background-tertiary'
                     : 'hover:bg-background-tertiary/60'

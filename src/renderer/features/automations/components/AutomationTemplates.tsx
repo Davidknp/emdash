@@ -264,7 +264,7 @@ function TemplateLogo({ logo }: { logo: LogoKind }) {
   const { effectiveTheme } = useTheme();
   const isDark = effectiveTheme === 'emdark';
   return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background">
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background">
       {logo.kind === 'image' ? (
         <img
           src={logo.src}
@@ -280,7 +280,7 @@ function TemplateLogo({ logo }: { logo: LogoKind }) {
   );
 }
 
-function TemplateCard({
+export function TemplateCard({
   template,
   onPick,
 }: {
@@ -299,28 +299,18 @@ function TemplateCard({
           pick();
         }
       }}
-      className="group flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-border bg-muted/20 px-2.5 py-2 text-left shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-muted/40 hover:shadow-md active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      className="group flex w-full cursor-pointer items-center gap-2.5 rounded-lg bg-muted/20 px-2.5 py-2 text-left shadow-[0_0_0_1px_rgb(0_0_0/0.06),0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-[0_0_0_1px_rgb(255_255_255/0.06),0_1px_2px_rgb(0_0_0/0.3)] hover:bg-muted/40 hover:shadow-[0_0_0_1px_rgb(0_0_0/0.08),0_4px_12px_rgb(0_0_0/0.08)] dark:hover:shadow-[0_0_0_1px_rgb(255_255_255/0.08),0_4px_12px_rgb(0_0_0/0.4)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [transition-property:background-color,box-shadow,transform] [transition-duration:150ms,150ms,120ms] [transition-timing-function:cubic-bezier(0.23,1,0.32,1)]"
     >
       <TemplateLogo logo={template.logo} />
       <div className="flex min-w-0 flex-1 flex-col">
         <h3 className="truncate text-xs font-medium text-foreground">{template.title}</h3>
         <p className="truncate text-[11px] text-muted-foreground">{template.description}</p>
-        <div className="flex flex-wrap gap-1">
-          {template.tags.map((tag) => (
-            <span
-              key={tag}
-              className="rounded bg-muted px-1 py-px text-[9px] font-medium leading-none text-muted-foreground"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
       </div>
       <Button
         type="button"
         variant="ghost"
         size="icon"
-        className="h-6 w-6 shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+        className="h-6 w-6 shrink-0 translate-x-1 opacity-0 transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:translate-x-0 group-focus-within:opacity-100"
         onClick={(e) => {
           e.stopPropagation();
           pick();

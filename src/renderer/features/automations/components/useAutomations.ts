@@ -84,6 +84,7 @@ export function useAutomations() {
     buildMutation<CreateAutomationInput, Automation>(queryClient, toast, {
       run: (input) => rpc.automations.create(input),
       errorLabel: 'Create',
+      successToast: 'Automation created',
     })
   );
 
@@ -102,10 +103,17 @@ export function useAutomations() {
     })
   );
 
-  const toggleMutation = useMutation(
+  const pauseMutation = useMutation(
     buildMutation<string, unknown>(queryClient, toast, {
-      run: (id) => rpc.automations.toggle({ id }),
-      errorLabel: 'Toggle',
+      run: (id) => rpc.automations.pause({ id }),
+      errorLabel: 'Pause',
+    })
+  );
+
+  const resumeMutation = useMutation(
+    buildMutation<string, unknown>(queryClient, toast, {
+      run: (id) => rpc.automations.resume({ id }),
+      errorLabel: 'Resume',
     })
   );
 
@@ -124,7 +132,8 @@ export function useAutomations() {
     createAutomation: (input: CreateAutomationInput) => createMutation.mutateAsync(input),
     updateAutomation: (input: UpdateAutomationInput) => updateMutation.mutateAsync(input),
     deleteAutomation: (id: string) => deleteMutation.mutateAsync(id),
-    toggleAutomation: (id: string) => toggleMutation.mutateAsync(id),
+    pauseAutomation: (id: string) => pauseMutation.mutateAsync(id),
+    resumeAutomation: (id: string) => resumeMutation.mutateAsync(id),
     triggerNow: (id: string) => triggerNowMutation.mutateAsync(id),
     isCreating: createMutation.isPending,
     isUpdating: updateMutation.isPending,

@@ -28,6 +28,7 @@ import type {
 } from '@shared/automations/types';
 import AgentLogo from '@renderer/lib/components/agent-logo';
 import { rpc } from '@renderer/lib/ipc';
+import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Button } from '@renderer/lib/ui/button';
 import {
@@ -54,9 +55,15 @@ import {
   TriggerTypeIcon,
   type TriggerFormValue,
 } from './trigger-controls';
-import { useAutomationMemory, useIsAutomationRunning, useRunLogs } from './useAutomations';
+import { useAutomationMemory, useRunLogs } from './useAutomations';
 import { useDebouncedAutoSave, type AutoSaveState } from './useDebouncedAutoSave';
-import { formatDateTime, formatRelative, formatRelativeFuture, TRIGGER_TYPE_LABELS } from './utils';
+import {
+  EASE_OUT,
+  formatDateTime,
+  formatRelative,
+  formatRelativeFuture,
+  TRIGGER_TYPE_LABELS,
+} from './utils';
 
 type EditorState = ScheduleFormValue &
   TriggerFormValue & {
@@ -94,7 +101,9 @@ function editorStatesEqual(a: EditorState, b: EditorState): boolean {
 
 function canAutoSaveEditorState(form: EditorState): boolean {
   return Boolean(
-    form.projectId &&
+    form.name.trim() &&
+      form.prompt.trim() &&
+      form.projectId &&
       form.agentId &&
       (form.mode !== 'schedule' || form.scheduleType !== 'custom' || form.customRRule.trim())
   );
@@ -123,7 +132,6 @@ type Props = {
   onDelete: () => void;
   onToggle: () => void;
   onTriggerNow: () => void;
-  onDiscardEmptyDraft: () => void;
   isBusy: boolean;
 };
 
@@ -134,7 +142,6 @@ export const AutomationEditor: React.FC<Props> = ({
   onDelete,
   onToggle,
   onTriggerNow,
-  onDiscardEmptyDraft,
   isBusy,
 }) => {
   const [form, setForm] = useState<EditorState>(() => automationToState(automation));
@@ -143,7 +150,6 @@ export const AutomationEditor: React.FC<Props> = ({
     formRef.current = form;
   }, [form]);
   const remoteSnapshotRef = useRef<EditorState>(automationToState(automation));
-  const isRunning = useIsAutomationRunning(automation.id);
   const { flushPendingChanges, hasUnsavedChanges, replaceSavedValue, saveState } =
     useDebouncedAutoSave<EditorState>({
       value: form,
@@ -178,18 +184,23 @@ export const AutomationEditor: React.FC<Props> = ({
   }, [hasUnsavedChanges, replaceSavedValue, saveState]);
 
   const handleBack = async () => {
-    const snapshot = formRef.current;
-    const isEmptyDraft = !snapshot.name.trim() && !snapshot.prompt.trim();
-    if (isEmptyDraft) {
-      onDiscardEmptyDraft();
-      return;
-    }
     try {
       await flushPendingChanges();
     } finally {
       onBack();
     }
   };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      void handleBack();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects', 'list'],
@@ -223,7 +234,7 @@ export const AutomationEditor: React.FC<Props> = ({
   return (
     <div className="flex h-full bg-background text-foreground">
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-4">
+        <header className="flex h-12 shrink-0 items-center justify-between gap-3 px-4 shadow-[inset_0_-1px_0_rgb(0_0_0/0.06)] dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.06)]">
           <div className="flex min-w-0 items-center gap-1.5 text-sm">
             <button
               type="button"
@@ -231,7 +242,7 @@ export const AutomationEditor: React.FC<Props> = ({
                 void handleBack();
               }}
               disabled={saveState === 'saving'}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-muted hover:text-foreground active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60"
+              className="relative inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60 [transition:background-color_150ms,color_150ms,transform_120ms_cubic-bezier(0.23,1,0.32,1)] before:absolute before:-inset-2 before:content-['']"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Automations
@@ -267,7 +278,7 @@ export const AutomationEditor: React.FC<Props> = ({
               value={form.name}
               onChange={(e) => patch('name', e.target.value)}
               placeholder="Untitled automation"
-              className="w-full bg-transparent pb-4 text-2xl font-semibold placeholder:text-muted-foreground/50 focus:outline-none"
+              className="w-full border-b border-transparent bg-transparent pb-4 text-2xl font-semibold transition-colors duration-150 placeholder:text-muted-foreground/50 focus:border-border/60 focus:outline-none"
             />
             <PromptInput
               value={form.prompt}
@@ -280,24 +291,24 @@ export const AutomationEditor: React.FC<Props> = ({
         </div>
       </main>
 
-      <aside className="flex w-[280px] shrink-0 flex-col border-l border-border/60 overflow-y-auto">
+      <aside className="flex w-[280px] shrink-0 flex-col overflow-y-auto bg-muted/10 shadow-[inset_1px_0_0_rgb(0_0_0/0.06)] dark:shadow-[inset_1px_0_0_rgb(255_255_255/0.06)]">
         <Section title="Status">
           <SidebarRow label="Status">
             <button
               type="button"
               onClick={onToggle}
               disabled={isBusy}
-              className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 text-xs transition-colors duration-150 hover:bg-muted active:scale-[0.97]"
+              className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 text-xs transition-colors duration-150 hover:bg-muted active:scale-[0.97] [transition:background-color_150ms,transform_120ms_cubic-bezier(0.23,1,0.32,1)]"
             >
-              <StatusDot status={automation.status} running={isRunning} />
-              <span>{statusLabel(automation.status, isRunning, isPaused)}</span>
+              <StatusDot status={automation.status} />
+              <span>{statusLabel(automation.status, isPaused)}</span>
               <AnimatePresence mode="wait" initial={false}>
                 <motion.span
                   key={isPaused ? 'paused' : 'active'}
-                  initial={{ opacity: 0, scale: 0.5, filter: 'blur(2px)' }}
+                  initial={{ opacity: 0, scale: 0.85, filter: 'blur(2px)' }}
                   animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, scale: 0.5, filter: 'blur(2px)' }}
-                  transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
+                  exit={{ opacity: 0, scale: 0.85, filter: 'blur(2px)' }}
+                  transition={{ duration: 0.16, ease: EASE_OUT }}
                   className="inline-flex"
                 >
                   {isPaused ? (
@@ -369,7 +380,10 @@ export const AutomationEditor: React.FC<Props> = ({
                   />
                 }
               />
-              <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
+              <DropdownMenuContent
+                align="end"
+                className="max-h-72 w-auto min-w-[14rem] overflow-y-auto"
+              >
                 {projects.length === 0 ? (
                   <div className="px-2 py-1.5 text-xs text-muted-foreground">No projects</div>
                 ) : (
@@ -445,6 +459,8 @@ export const AutomationEditor: React.FC<Props> = ({
               <DropdownMenuTrigger
                 render={
                   <SidebarValueButton
+                    label={selectedAgent?.name ?? 'Select'}
+                    muted={!selectedAgent}
                     icon={
                       selectedAgent ? (
                         <AgentLogo
@@ -516,21 +532,19 @@ export const AutomationEditor: React.FC<Props> = ({
 
         <MemorySection automationId={automation.id} />
 
-        <PreviousRunsSection automationId={automation.id} />
+        <PreviousRunsSection automationId={automation.id} projectId={automation.projectId} />
       </aside>
     </div>
   );
 };
 
-function statusLabel(status: Automation['status'], isRunning: boolean, isPaused: boolean): string {
-  if (isRunning) return 'Running';
+function statusLabel(status: Automation['status'], isPaused: boolean): string {
   if (isPaused) return 'Paused';
   if (status === 'error') return 'Error';
   return 'Active';
 }
 
-function StatusDot({ status, running }: { status: Automation['status']; running: boolean }) {
-  if (running) return <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />;
+function StatusDot({ status }: { status: Automation['status'] }) {
   if (status === 'paused') return <span className="h-2 w-2 rounded-full bg-orange-400" />;
   if (status === 'error') return <span className="h-2 w-2 rounded-full bg-destructive" />;
   return <span className="h-2 w-2 rounded-full bg-emerald-500" />;
@@ -547,11 +561,11 @@ function SaveIndicator({ state }: { state: AutoSaveState }) {
             initial={{ opacity: 0, filter: 'blur(2px)' }}
             animate={{ opacity: 1, filter: 'blur(0px)' }}
             exit={{ opacity: 0, filter: 'blur(2px)' }}
-            transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+            transition={{ duration: 0.18, ease: EASE_OUT }}
           >
             {state === 'saving' ? (
               <>
-                <Loader2 className="h-3 w-3 animate-spin" /> Saving…
+                <Loader2 className="h-3 w-3 animate-spin [animation-duration:600ms]" /> Saving…
               </>
             ) : (
               <>
@@ -567,7 +581,7 @@ function SaveIndicator({ state }: { state: AutoSaveState }) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5 border-b border-border/40 px-3 py-3">
+    <div className="flex flex-col gap-0.5 px-3 py-3 shadow-[inset_0_-1px_0_rgb(0_0_0/0.05)] dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.05)]">
       <h3 className="mb-1 px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
         {title}
       </h3>
@@ -600,14 +614,14 @@ const SidebarValueButton = React.forwardRef<
       type="button"
       onClick={onClick}
       className={cn(
-        'inline-flex h-6 max-w-[160px] items-center gap-1.5 rounded px-1.5 text-xs transition-[background-color,color,transform] duration-150 hover:bg-muted active:scale-[0.97]',
+        'group/sv inline-flex h-6 max-w-[160px] items-center gap-1.5 rounded px-1.5 text-xs transition-colors duration-150 hover:bg-muted active:scale-[0.97] [transition:background-color_150ms,color_150ms,transform_120ms_cubic-bezier(0.23,1,0.32,1)]',
         muted && 'text-muted-foreground'
       )}
       {...rest}
     >
       {icon}
       {label && <span className="truncate">{label}</span>}
-      <ChevronDown className="h-3 w-3 text-muted-foreground/60" />
+      <ChevronDown className="h-3 w-3 text-muted-foreground/60 transition-transform duration-150 ease-out group-data-[state=open]/sv:rotate-180 group-data-[popup-open]/sv:rotate-180" />
     </button>
   );
 });
@@ -628,7 +642,7 @@ function MemorySection({ automationId }: { automationId: string }) {
     .join(' ');
 
   return (
-    <div className="flex flex-col gap-1 border-b border-border/40 px-3 py-3">
+    <div className="flex flex-col gap-1 px-3 py-3 shadow-[inset_0_-1px_0_rgb(0_0_0/0.05)] dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.05)]">
       <div className="mb-1 flex items-center justify-between px-1">
         <h3 className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
           Memory
@@ -636,7 +650,7 @@ function MemorySection({ automationId }: { automationId: string }) {
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="text-[10px] text-muted-foreground transition-colors duration-150 hover:text-foreground"
+          className="relative -my-1 -mr-1 rounded px-1.5 py-1 text-[10px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-[0.95] [transition:background-color_150ms,color_150ms,transform_120ms_cubic-bezier(0.23,1,0.32,1)] before:absolute before:inset-[-8px] before:content-['']"
         >
           {expanded ? 'Hide' : 'Edit'}
         </button>
@@ -649,7 +663,12 @@ function MemorySection({ automationId }: { automationId: string }) {
           <div className="h-3 w-5/6 animate-pulse rounded bg-muted/50" />
         </div>
       ) : expanded ? (
-        <div className="flex flex-col gap-2 px-1">
+        <motion.div
+          initial={{ opacity: 0, y: 2 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.15, ease: EASE_OUT }}
+          className="flex flex-col gap-2 px-1"
+        >
           <Textarea
             value={effectiveDraft}
             onChange={(e) => setDraft(e.target.value)}
@@ -699,7 +718,7 @@ function MemorySection({ automationId }: { automationId: string }) {
               </Button>
             </div>
           </div>
-        </div>
+        </motion.div>
       ) : (
         <div className="flex flex-col gap-1 px-1">
           {preview ? (
@@ -716,8 +735,15 @@ function MemorySection({ automationId }: { automationId: string }) {
   );
 }
 
-function PreviousRunsSection({ automationId }: { automationId: string }) {
+function PreviousRunsSection({
+  automationId,
+  projectId,
+}: {
+  automationId: string;
+  projectId: string;
+}) {
   const { data: logs = [], isPending } = useRunLogs(automationId, 20);
+  const { navigate } = useNavigate();
   return (
     <div className="flex min-h-0 flex-1 flex-col px-3 py-3">
       <h3 className="mb-1 px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
@@ -743,7 +769,13 @@ function PreviousRunsSection({ automationId }: { automationId: string }) {
       ) : (
         <ul className="flex flex-col">
           {logs.map((log) => (
-            <RunLogRow key={log.id} log={log} />
+            <RunLogRow
+              key={log.id}
+              log={log}
+              onOpen={
+                log.taskId ? () => navigate('task', { projectId, taskId: log.taskId! }) : undefined
+              }
+            />
           ))}
         </ul>
       )}
@@ -751,7 +783,7 @@ function PreviousRunsSection({ automationId }: { automationId: string }) {
   );
 }
 
-function RunLogRow({ log }: { log: AutomationRunLog }) {
+function RunLogRow({ log, onOpen }: { log: AutomationRunLog; onOpen?: () => void }) {
   const Icon =
     log.status === 'success' ? CheckCircle2 : log.status === 'failure' ? XCircle : Loader2;
   const iconClass =
@@ -759,9 +791,9 @@ function RunLogRow({ log }: { log: AutomationRunLog }) {
       ? 'text-emerald-500'
       : log.status === 'failure'
         ? 'text-destructive'
-        : 'text-blue-500 animate-spin';
-  return (
-    <li className="flex items-center justify-between gap-2 rounded px-1 py-1.5 text-xs hover:bg-muted">
+        : 'text-blue-500 animate-spin [animation-duration:600ms]';
+  const content = (
+    <>
       <div className="flex min-w-0 items-center gap-2">
         <Icon className={cn('h-3 w-3 shrink-0', iconClass)} />
         <span className="truncate">{log.status === 'running' ? 'Running' : log.status}</span>
@@ -769,6 +801,24 @@ function RunLogRow({ log }: { log: AutomationRunLog }) {
       <span className="tabular-nums text-muted-foreground" title={formatDateTime(log.startedAt)}>
         {formatRelative(log.startedAt)}
       </span>
+    </>
+  );
+  if (!onOpen) {
+    return (
+      <li className="flex cursor-default items-center justify-between gap-2 rounded px-1 py-1.5 text-xs text-muted-foreground/80">
+        {content}
+      </li>
+    );
+  }
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full items-center justify-between gap-2 rounded px-1 py-1.5 text-left text-xs transition-[background-color,transform] duration-150 hover:bg-muted active:scale-[0.99]"
+      >
+        {content}
+      </button>
     </li>
   );
 }

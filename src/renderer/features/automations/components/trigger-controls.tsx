@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Clock, Zap } from 'lucide-react';
+import { Check, ChevronDown, Zap } from 'lucide-react';
 import React from 'react';
 import {
   TRIGGER_INTEGRATION_MAP,
@@ -62,47 +62,25 @@ export function TriggerTypeIcon({
 type TriggerPopoverBodyProps = {
   value: TriggerFormValue;
   onChange: (patch: Partial<TriggerFormValue>) => void;
-  onSwitchMode?: () => void;
 };
 
-export function TriggerPopoverBody({ value, onChange, onSwitchMode }: TriggerPopoverBodyProps) {
+export function TriggerPopoverBody({ value, onChange }: TriggerPopoverBodyProps) {
   return (
     <div className="flex flex-col">
-      {onSwitchMode && (
-        <div className="flex justify-center px-3 pt-3 pb-2">
-          <div className="inline-flex rounded-md border border-border bg-muted p-0.5">
-            <button
-              type="button"
-              onClick={onSwitchMode}
-              className="inline-flex items-center gap-1.5 rounded-sm px-3 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Clock className="h-3 w-3" />
-              Schedule
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-sm bg-background px-3 py-1 text-[11px] font-medium text-foreground shadow-sm"
-            >
-              <Zap className="h-3 w-3" />
-              Trigger
-            </button>
-          </div>
-        </div>
-      )}
-      <div className="px-3 pb-2">
+      <div className="px-3 pt-2 pb-2">
         <FieldRow label="Source">
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
                 <button
                   type="button"
-                  className="flex h-7 w-full items-center justify-between gap-1.5 rounded-md border border-border bg-transparent px-2.5 text-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="group/tt flex h-7 w-full items-center justify-between gap-1.5 rounded-md border border-border bg-transparent px-2.5 text-xs outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] [transition:background-color_150ms,border-color_150ms,color_150ms,box-shadow_150ms,transform_120ms_cubic-bezier(0.23,1,0.32,1)]"
                 >
                   <div className="flex items-center gap-1.5">
                     <TriggerTypeIcon triggerType={value.triggerType} className="h-3.5 w-3.5" />
                     <span>{TRIGGER_TYPE_LABELS[value.triggerType]}</span>
                   </div>
-                  <ChevronDown className="h-3 w-3 text-muted-foreground/70" />
+                  <ChevronDown className="h-3 w-3 text-muted-foreground/70 transition-transform duration-150 ease-out group-data-[state=open]/tt:rotate-180 group-data-[popup-open]/tt:rotate-180" />
                 </button>
               }
             />
@@ -119,7 +97,7 @@ export function TriggerPopoverBody({ value, onChange, onSwitchMode }: TriggerPop
         </FieldRow>
       </div>
 
-      <div className="border-t border-border/60" />
+      <div className="h-px shadow-[inset_0_1px_0_rgb(0_0_0/0.06)] dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.06)]" />
       <SectionHeader>Filters</SectionHeader>
       <div className="flex flex-col gap-2 px-3 pb-3">
         <FieldRow label="Assignee">
