@@ -1,7 +1,7 @@
 import { useHotkey } from '@tanstack/react-hotkeys';
-import { LayoutList, Play, Terminal } from 'lucide-react';
+import { LayoutList, Maximize2, Minimize2, Play, Terminal } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { makePtySessionId } from '@shared/ptySessionId';
 import { asMounted, getProjectStore } from '@renderer/features/projects/stores/project-selectors';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
@@ -23,6 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/toolti
 import { log } from '@renderer/utils/logger';
 import { cn } from '@renderer/utils/utils';
 import { useIsActiveTask } from '../hooks/use-is-active-task';
+import { ExpandedTerminalOverlay } from './expanded-terminal-overlay';
 import {
   getTerminalsPaneSize,
   nextTerminalName,
@@ -48,9 +49,16 @@ export const TerminalsPanel = observer(function TerminalsPanel() {
     mountedProject?.data.type === 'ssh' ? mountedProject.data.connectionId : undefined;
   const [isPanelFocused, setIsPanelFocused] = useState(false);
   const [mode, setMode] = useState<PanelMode>('terminals');
+  const [isExpanded, setIsExpanded] = useState(false);
   const newTerminalHotkey = getEffectiveHotkey('newTerminal', keyboard);
 
   const autoFocus = isActive && isRightOpen && provisionedTask.taskView.focusedRegion === 'right';
+
+  useEffect(() => {
+    if (!isRightOpen || mode !== 'terminals' || !terminalTabView.activeTab) {
+      setIsExpanded(false);
+    }
+  }, [isRightOpen, mode, terminalTabView.activeTab]);
 
   const handleCreate = async () => {
     if (!terminalMgr) return;
@@ -79,6 +87,11 @@ export const TerminalsPanel = observer(function TerminalsPanel() {
       workspaceId: provisionedTask.workspaceId,
       type: activeScript.data.type,
     });
+  };
+
+  const toggleExpanded = () => {
+    provisionedTask.taskView.setFocusedRegion('right');
+    setIsExpanded((prev) => !prev);
   };
 
   const activeStore = mode === 'terminals' ? terminalTabView : lifecycleScriptsMgr;
@@ -142,6 +155,21 @@ export const TerminalsPanel = observer(function TerminalsPanel() {
     | TabViewProvider<AnyPtyEntity, never>
     | undefined;
 
+  const expandButton =
+    mode === 'terminals' && terminalTabView.activeTab ? (
+      <Tooltip>
+        <TooltipTrigger>
+          <button
+            className="size-10 flex items-center justify-center border-l text-foreground-muted hover:bg-background hover:text-foreground"
+            onClick={toggleExpanded}
+          >
+            {isExpanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{isExpanded ? 'Collapse terminal' : 'Expand terminal'}</TooltipContent>
+      </Tooltip>
+    ) : null;
+
   const tabBar =
     mode === 'terminals' ? (
       <TerminalsTabs
@@ -149,7 +177,12 @@ export const TerminalsPanel = observer(function TerminalsPanel() {
         taskId={taskId}
         terminalTabView={terminalTabView}
         terminalMgr={terminalMgr}
-        actions={toggleButton}
+        actions={
+          <div className="flex items-center">
+            {expandButton}
+            {toggleButton}
+          </div>
+        }
       />
     ) : (
       <ScriptsTabs
@@ -194,7 +227,7 @@ export const TerminalsPanel = observer(function TerminalsPanel() {
       />
     );
 
-  return (
+  const panel = (
     <TabbedPtyPanel
       autoFocus={autoFocus}
       onFocusChange={(focused) => {
@@ -210,4 +243,14 @@ export const TerminalsPanel = observer(function TerminalsPanel() {
       emptyState={emptyState}
     />
   );
+
+  if (isExpanded) {
+    return (
+      <ExpandedTerminalOverlay onClose={() => setIsExpanded(false)}>
+        {panel}
+      </ExpandedTerminalOverlay>
+    );
+  }
+
+  return panel;
 });
