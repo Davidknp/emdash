@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 // ── imports (after mocks) ──────────────────────────────────────────────
-import { parseSshConfigFile, resolveIdentityAgent } from '../../main/utils/sshConfigParser';
+import { parseSshConfigFile, resolveIdentityAgent } from '../../main/core/ssh/sshConfigParser';
 
 // ── mocks ──────────────────────────────────────────────────────────────
 const readFileMock = vi.fn();
