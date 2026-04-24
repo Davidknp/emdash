@@ -27,7 +27,7 @@ export function AccountTab() {
     setError(null);
     try {
       const result = await signInMutation.mutateAsync(undefined);
-      if (!result.success) {
+      if (!result.success || !result.user) {
         const message = result.error || 'Sign in failed';
         setError(message);
         toast({
