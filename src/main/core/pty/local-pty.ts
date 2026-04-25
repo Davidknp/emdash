@@ -85,6 +85,10 @@ export class LocalPtySession implements Pty {
       handler({ exitCode, signal: normalizeSignal(signal) });
     });
   }
+
+  getPid(): number {
+    return this.proc.pid;
+  }
 }
 
 function resolveWindowsPtySpawn(
